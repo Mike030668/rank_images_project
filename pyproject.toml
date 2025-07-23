@@ -1,0 +1,93 @@
+# pyproject.toml
+
+[build-system]
+# Используем setuptools для сборки пакета
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rank_images" # Имя проекта/пакета
+version = "0.1.0" # Начальная версия
+description = "Ранжирование изображений на основе текстовых промптов и качества с помощью SigLIP-2, Florence-2, CLIP-IQA и DINOv2."
+authors = [
+  # Замените на свои данные
+  {name = "Ваше Имя", email = "ваш.email@example.com"},
+]
+readme = "README.md"
+license = {text = "MIT"} # Или другая, укажите в LICENSE файле
+requires-python = ">=3.9" # Минимальная версия Python
+
+# --- Основные зависимости проекта ---
+dependencies = [
+    # --- PyTorch и экосистема ---
+    # PyTorch >= 2.7.1. Установка будет через специальный индекс (см. ниже в инструкции).
+    # pip/uv будут искать подходящую версию в дополнительном индексе.
+    "torch>=2.7.1",
+    "torchvision>=0.22.1",
+    "torchaudio>=2.7.1",
+
+    # torchmetrics с поддержкой мультимодальных метрик
+    "torchmetrics[multimodal]",
+
+    # --- Трансформеры и NLP ---
+    "transformers==4.53.1",
+    "sentence-transformers==4.1.0",
+
+    # --- Компьютерное зрение ---
+    "timm==1.0.17",
+
+    # --- Вычисления и трансформации ---
+    "einops",
+    "piq",
+
+    # --- Числовые и табличные данные ---
+    # numpy < 2.0.0 для совместимости с некоторыми библиотеками
+    "numpy<2.0.0",
+    "pandas==2.2.2",
+    "sklearn-pandas==2.2.0", # Если используется, иначе можно убрать
+
+    # --- Утилиты ---
+    "tqdm==4.67.1", # Прогресс-бары
+    "Pillow", # Работа с изображениями (обычно тянется через torchvision, но явно не помешает)
+
+    # --- Jupyter (опционально, но указано в requirements) ---
+    # "ipywidgets", # Включим в группу notebook
+]
+
+# --- Дополнительные группы зависимостей ---
+[project.optional-dependencies]
+# Зависимости для разработки и форматирования
+dev = [
+    "black",       # Форматирование кода
+    "flake8",      # Линтинг
+    "isort",       # Сортировка импортов
+]
+# Зависимости для тестирования
+test = [
+    "pytest",      # Фреймворк тестирования
+    "pytest-cov",  # Отчеты о покрытии
+]
+# Зависимости для работы с Jupyter ноутбуками
+notebook = [
+    "jupyter",     # Jupyter
+    "ipywidgets",  # Виджеты для Jupyter
+]
+
+# --- Точка входа для CLI ---
+[project.scripts]
+# Это позволяет запускать скрипт как `rank-images ...`
+# после установки пакета с помощью `pip install -e .`
+rank-images = "rank_images.cli:main"
+
+# --- Настройка setuptools для поиска пакетов ---
+[tool.setuptools.packages.find]
+# Указываем, что пакеты Python находятся в каталоге src
+where = ["src"]
+
+# --- Настройки инструментов (опционально) ---
+[tool.black]
+line-length = 88
+target-version = ['py39']
+
+[tool.isort]
+profile = "black"

@@ -1,0 +1,6 @@
+{
+  "prompt": "An advertising image for a credit card, featuring prominent 3D rendered numbers representing a high deposit percentage. The scene is set against a stunning natural backdrop of a serene blue ocean meeting majestic, sun-drenched mountains. The overall style should be a vibrant and dynamic 3D render, capturing the feeling of opportunity and natural beauty.",
+  "prompt2": "credit card standing against stunning natural backdrop of a serene blue ocean meeting majestic, sun-drenched mountains, vibrant and dynamic 3D render, feeling of opportunity and natural beauty",
+  "negative": "lowres, blurry, unrealistic colors",
+  "negative2": "lowres, blurry, watermark, unrealistic colors"
+}
