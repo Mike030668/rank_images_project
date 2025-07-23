@@ -123,23 +123,27 @@ def load_models() -> None:
     global iqa_metric, sig_proc, sig_model, dino_proc, dino_model, flor_proc, flor_model
 
     logger.info("Начинаю загрузку моделей (на CPU)...")
-
+    #print("[DEBUG_LOAD_MODELS] Начало выполнения load_models()") # <-- Добавлено
     # --- Загрузка CLIP-IQA ---
     iqa_metric = CLIPImageQualityAssessment("clip_iqa").to(DEVICE_CPU).eval()
     logger.info("Модель CLIP-IQA загружена.")
 
     # --- Загрузка SigLIP-2 ---
     sig_proc = AutoProcessor.from_pretrained(SIGLIP_MODEL_NAME)
+    #print(f"[DEBUG_LOAD_MODELS] sig_proc присвоен: {type(sig_proc)}") # <-- Добавлено
     sig_model = AutoModel.from_pretrained(
         SIGLIP_MODEL_NAME, torch_dtype=DTYPE, device_map="cpu"
     ).eval()
+    #print(f"[DEBUG_LOAD_MODELS] sig_model присвоен: {type(sig_model)}") # <-- Добавлено
     logger.info("Модель SigLIP-2 загружена.")
 
     # --- Загрузка DINOv2 ---
     dino_proc = AutoProcessor.from_pretrained(DINO_MODEL_NAME)
+    #print(f"[DEBUG_LOAD_MODELS] dino_proc присвоен: {type(dino_proc)}") # <-- Добавлено
     dino_model = AutoModel.from_pretrained(
         DINO_MODEL_NAME, torch_dtype=DTYPE, device_map="cpu"
     ).eval()
+    #print(f"[DEBUG_LOAD_MODELS] dino_model присвоен: {type(dino_model)}") # <-- Добавлено
     logger.info("Модель DINOv2 загружена.")
 
     # --- Ленивая загрузка Florence-2 ---
@@ -158,7 +162,7 @@ def load_models() -> None:
     flor_proc = FlorenceProcessor.from_pretrained(FLORENCE_MODEL_NAME, trust_remote_code=True)
 
     logger.info("Все модели успешно загружены и готовы к использованию.")
-
+    #print("[DEBUG_LOAD_MODELS] load_models() завершена.") # <-- Добавлено
 
 # --- Инициализация моделей при импорте модуля (если это необходимо) ---
 # В текущей логике, загрузка происходит в CLI или в ранжировании.

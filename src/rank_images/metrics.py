@@ -24,15 +24,9 @@ from PIL import Image
 
 # Импорт утилит и моделей
 from .device_utils import _to_gpu, _release
-from .models import (
-    iqa_metric,
-    sig_proc,
-    sig_model,
-    dino_proc,
-    dino_model,
-    flor_proc,
-    flor_model,
-)
+
+from . import models # <-- Импортируем модуль models целиком
+
 from .config import MAX_SIG_TOK, DTYPE, DEVICE_CPU
 
 # Настройка логгирования
@@ -67,6 +61,8 @@ def _z(a: np.ndarray) -> np.ndarray:
 # дополнительные аргументы (например, текстовые промпты).
 # Возвращает вещественное число (float) как оценку.
 
+#print(f"[DEBUG_IMPORT] В metrics.py после импортов: sig_proc is None = {models.sig_proc is None}")
+
 @torch.inference_mode()
 def get_siglip_score(img: Image.Image, txts: List[str]) -> float:
     """
@@ -83,6 +79,14 @@ def get_siglip_score(img: Image.Image, txts: List[str]) -> float:
     Returns:
         float: Средняя косинусная схожесть. Если `txts` пуст, возвращает 0.0.
     """
+    #print(f"[DEBUG_CALL] В get_siglip_score: sig_proc is None = {sig_proc is None}")
+
+    if models.sig_proc is None:
+        raise RuntimeError(
+            "models.sig_proc равен None в get_siglip_score! "
+            "Убедитесь, что load_models() была вызвана до ранжирования."
+        )
+
     if not txts:
         logger.debug("Список текстов для SigLIP пуст. Возвращаю 0.0.")
         return 0.0
@@ -92,7 +96,7 @@ def get_siglip_score(img: Image.Image, txts: List[str]) -> float:
     # 1. Подготовка данных (токенизация, преобразование изображения)
     #    с разбиением текста на фрагменты по MAX_SIG_TOK токенов.
     #    `sig_proc` уже знает о MAX_SIG_TOK, но мы явно указываем для контроля.
-    feats = sig_proc(
+    feats = models.sig_proc( # <-- Обращение через models.
         images=img,
         text=txts,
         return_tensors="pt",
@@ -107,7 +111,7 @@ def get_siglip_score(img: Image.Image, txts: List[str]) -> float:
     }
 
     # 3. Перемещение модели на GPU (если доступен) и данных на то же устройство
-    model_gpu = _to_gpu(sig_model)
+    model_gpu = _to_gpu(models.sig_model) # <-- Обращение через models.
     feats = {k: v.to(model_gpu.device) for k, v in feats.items()}
 
     # 4. Прямой проход через модель
@@ -162,11 +166,11 @@ def get_florence_score(img: Image.Image, phrase: str) -> float:
     task = "<CAPTION_TO_PHRASE_GROUNDING>"
 
     # 2. Подготовка входных данных
-    inputs = flor_proc(text=task + phrase, images=img, return_tensors="pt")
+    inputs = models.flor_proc(text=task + phrase, images=img, return_tensors="pt")
 
     # 3. Перемещение данных на устройство, где находится модель
     #    Определяем устройство и тип данных первого параметра модели
-    first_param = next(flor_model.parameters())
+    first_param = next(models.flor_model.parameters())
     target_device = first_param.device
     model_dtype = first_param.dtype
 
@@ -180,7 +184,7 @@ def get_florence_score(img: Image.Image, phrase: str) -> float:
             inputs_moved[k] = v.to(target_device)
 
     # 4. Генерация (инференс)
-    generated_ids = flor_model.generate(
+    generated_ids = models.flor_model.generate(
         input_ids=inputs_moved["input_ids"],
         pixel_values=inputs_moved["pixel_values"],
         max_new_tokens=512,
@@ -189,10 +193,10 @@ def get_florence_score(img: Image.Image, phrase: str) -> float:
     )
 
     # 5. Декодирование результата
-    generated_text = flor_proc.batch_decode(generated_ids, skip_special_tokens=False)[0]
+    generated_text = models.flor_proc.batch_decode(generated_ids, skip_special_tokens=False)[0]
 
     # 6. Пост-обработка результата
-    parsed_output = flor_proc.post_process_generation(
+    parsed_output = models.flor_proc.post_process_generation(
         generated_text, task=task, image_size=(img.width, img.height)
     )
 
@@ -236,7 +240,7 @@ def get_iqa(img: Image.Image) -> float:
     img_tensor = img_tensor.to(DEVICE_CPU, dtype=torch.float32)
 
     # 2. Прямой проход через модель (на CPU)
-    quality_score = iqa_metric(img_tensor).item()
+    quality_score = models.iqa_metric(img_tensor).item()
 
     logger.debug(f"CLIP-IQA скор: {quality_score:.4f}")
     return quality_score
@@ -259,10 +263,10 @@ def get_dino(img: Image.Image) -> float:
     logger.debug("Вычисляю DINOv2 скор.")
 
     # 1. Подготовка данных (преобразование изображения)
-    feats = dino_proc(images=img, return_tensors="pt")
+    feats = models.dino_proc(images=img, return_tensors="pt")
 
     # 2. Перемещение модели на GPU (если доступен) и данных на то же устройство
-    model_gpu = _to_gpu(dino_model)
+    model_gpu = _to_gpu(models.dino_model)
     feats = {k: v.to(model_gpu.device, dtype=DTYPE) for k, v in feats.items()}
 
     # 3. Прямой проход через модель

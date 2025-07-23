@@ -70,19 +70,22 @@ float: Вес метрики DINOv2 (внутренние признаки из�
        По умолчанию 0.1.
 """
 
+SIZE: str = "base" # "large"
+PATCH: str = "16-224" # "large"
+
 # --- Имена моделей ---
 # Константы для путей к предобученным моделям Hugging Face.
-SIGLIP_MODEL_NAME: str = "google/siglip2-large-patch16-512"
+SIGLIP_MODEL_NAME: str = f"google/siglip2-{SIZE}-patch{PATCH}"
 """
 str: Имя предобученной модели SigLIP-2 в Hugging Face Hub.
 """
 
-DINO_MODEL_NAME: str = "facebook/dinov2-large"
+DINO_MODEL_NAME: str = f"facebook/dinov2-{SIZE}"
 """
 str: Имя предобученной модели DINOv2 в Hugging Face Hub.
 """
 
-FLORENCE_MODEL_NAME: str = "microsoft/Florence-2-large"
+FLORENCE_MODEL_NAME: str = f"microsoft/Florence-2-{SIZE}"
 """
 str: Имя предобученной модели Florence-2 в Hugging Face Hub.
 """

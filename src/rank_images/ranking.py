@@ -34,7 +34,7 @@ from .metrics import (
     get_dino,
 )
 # Импорт конфигурации
-from .config import ALPHA_DEFAULT, BETA_DEFAULT, GAMMA_DEFAULT, DELTA_DEFAULT
+from .config import ALPHA_DEFAULT, BETA_DEFAULT, GAMMA_DEFAULT, DELTA_DEFAULT, MAX_SIG_TOK
 
 # Настройка логгирования
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ def rank_folder(
     beta: float = BETA_DEFAULT,
     gamma: float = GAMMA_DEFAULT,
     delta: float = DELTA_DEFAULT,
-    chunk_size: Optional[int] = None,
+    chunk_size: Optional[int] = None,  # Может быть None
 ) -> pd.DataFrame:
     """
     Ранжирует изображения в заданной директории на основе текстовых промптов
@@ -107,6 +107,46 @@ def rank_folder(
     results = [] # Список для хранения результатов по каждому изображению
     logger.info("Начинаю вычисление метрик для изображений...")
 
+    # --- ЛОКАЛЬНОЕ определение _chunks для ранжирования ---
+    # Воссоздаёт логику оригинального скрипта для обработки chunk_size=None
+    def _chunks(text: str, max_tok: Optional[int]) -> List[str]:
+        """
+        Локальная функция разбиения текста на фрагменты.
+        
+        Если max_tok равно None, используется фиксированное значение MAX_SIG_TOK.
+        Это необходимо для корректной работы SigLIP-2, которая имеет ограничение
+        на длину входного текста.
+        """
+        # ВАЖНО: Обработка None для SigLIP (воспроизведение оригинальной логики)
+        if max_tok is None:
+            max_tok = MAX_SIG_TOK # <-- Подставляем MAX_SIG_TOK если None
+        # Обработка <= 0
+        if max_tok <= 0:
+            return [text]
+        # Разбиение на фрагменты
+        words = text.split()
+        return [" ".join(words[i : i + max_tok]) for i in range(0, len(words), max_tok)]
+    # --- Конец локального определения _chunks ---
+
+    # --- Подготовка текстовых запросов ---
+    # Функция для создания списка непустых фрагментов текста
+    # Использует ЛОКАЛЬНУЮ _chunks
+    def _make_chunks(*texts: str) -> List[str]:
+        # --- Отладочные принты внутри _make_chunks ---
+        #print(f"[DEBUG][_make_chunks] type(_chunks): {type(_chunks)}")
+        #print(f"[DEBUG][_make_chunks] _chunks is None: {_chunks is None}")
+        if _chunks is None:
+            raise RuntimeError("Локальная переменная _chunks равна None внутри _make_chunks!")
+        # --- Конец отладочных принтов ---
+        
+        output_chunks = []
+        for text in texts:
+            # Разбиваем каждый текст на фрагменты и добавляем непустые
+            output_chunks.extend(_chunks(text, chunk_size))
+        # Возвращаем список уникальных непустых фрагментов
+        return [chunk for chunk in output_chunks if chunk.strip()]
+
+
     # --- 2. Цикл по изображениям ---
     # Используем tqdm для отображения прогресса
     for row in tqdm(df_prompts.to_dict("records"), desc="Обработка изображений"):
@@ -119,46 +159,51 @@ def rank_folder(
             continue
 
         try:
+            #print(f"[DEBUG] type(_chunks): {type(_chunks)}")
+            #print(f"[DEBUG] _chunks is None: {_chunks is None}")
+            #print(f"[DEBUG] [1] Открываем изображение: {image_path}")
             # Открываем изображение
             img_pil = Image.open(image_path).convert("RGB")
         except Exception as e:
             logger.error(f"Ошибка при открытии изображения {image_path}: {e}")
             continue
 
-        # --- Подготовка текстовых запросов ---
-        # Функция для создания списка непустых фрагментов текста
-        def _make_chunks(*texts: str) -> List[str]:
-            output_chunks = []
-            for text in texts:
-                # Разбиваем каждый текст на фрагменты и добавляем непустые
-                output_chunks.extend(_chunks(text, chunk_size))
-            # Возвращаем список уникальных непустых фрагментов
-            return [chunk for chunk in output_chunks if chunk.strip()]
 
-        # Подготавливаем позитивные и негативные фрагменты для SigLIP
-        positive_chunks_siglip = _make_chunks(row["prompt"], row["prompt2"])
-        negative_chunks_siglip = _make_chunks(row["negative"], row["negative2"])
-
-        # --- Вычисление метрик ---
         try:
+            # Подготавливаем позитивные и негативные фрагменты для SigLIP
+            # Если chunk_size=None, _make_chunks -> _chunks -> подставит MAX_SIG_TOK для SigLIP
+            #print(f"[DEBUG] [2] Подготавливаем чанки SigLIP...")
+            positive_chunks_siglip = _make_chunks(row["prompt"], row["prompt2"])
+            #print(f"[DEBUG] [2.OK] positive_chunks_siglip: {positive_chunks_siglip}")
+            negative_chunks_siglip = _make_chunks(row["negative"], row["negative2"])
+            #print(f"[DEBUG] [2.OK] negative_chunks_siglip: {negative_chunks_siglip}")
+            # --- Вычисление метрик ---
+            #print(f"[DEBUG] [3] Начинаем SigLIP...")
             # --- SigLIP Score ---
             siglip_pos_score = get_siglip_score(img_pil, positive_chunks_siglip)
+            #print(f"[DEBUG] [3.OK] siglip_pos_score: {siglip_pos_score}")
             siglip_neg_score = get_siglip_score(img_pil, negative_chunks_siglip)
+            #print(f"[DEBUG] [3.OK] siglip_neg_score: {siglip_neg_score}")
             siglip_score = siglip_pos_score - siglip_neg_score
+            #print(f"[DEBUG] [3.OK] siglip_score: {siglip_score}")
 
+            #print(f"[DEBUG] [4] Начинаем Florence...")
             # --- Florence Score ---
             # Объединяем позитивные/негативные промпты в одну строку для Florence
             florence_positive_text = ", ".join(filter(None, [row["prompt"], row["prompt2"]]))
             florence_negative_text = ", ".join(filter(None, [row["negative"], row["negative2"]]))
-            
-            # Разбиваем объединённые тексты на фрагменты (обычно 1 фрагмент)
-            florence_pos_chunks = _make_chunks(florence_positive_text)
-            florence_neg_chunks = _make_chunks(florence_negative_text)
 
+            # Разбиваем объединённые тексты на фрагменты (используя chunk_size, которое может быть None)
+            # Если chunk_size=None, Florence получит фрагмент [full_text] (так как _chunks(None) -> [full_text] после подстановки MAX_SIG_TOK и проверки длины)
+            florence_pos_chunks = _make_chunks(florence_positive_text)
+            #print(f"[DEBUG] [4.OK] florence_pos_chunks: {florence_pos_chunks}")
+            florence_neg_chunks = _make_chunks(florence_negative_text)
+            #print(f"[DEBUG] [4.OK] florence_neg_chunks: {florence_neg_chunks}")
             # Вычисляем средний Florence-скор для позитивных фрагментов
             florence_pos_scores = [
                 get_florence_score(img_pil, chunk) for chunk in florence_pos_chunks
             ]
+            #print(f"[DEBUG] [4.OK] florence_pos_scores: {florence_pos_scores}")
             avg_florence_pos_score = (
                 sum(florence_pos_scores) / len(florence_pos_scores)
                 if florence_pos_scores else 0.0
@@ -172,14 +217,19 @@ def rank_folder(
                 sum(florence_neg_scores) / len(florence_neg_scores)
                 if florence_neg_scores else 0.0
             )
-
+            #print(f"[DEBUG] [4.OK] florence_neg_scores: {florence_neg_scores}")
             florence_score = avg_florence_pos_score - avg_florence_neg_score
+            #print(f"[DEBUG] [4.OK] florence_score: {florence_score}")
 
+            #print(f"[DEBUG] [5] Начинаем IQA...")
             # --- IQA Score ---
             iqa_score = get_iqa(img_pil)
+            #print(f"[DEBUG] [5.OK] iqa_score: {iqa_score}")
 
+            #print(f"[DEBUG] [6] Начинаем DINO...")
             # --- DINO Score ---
             dino_score = get_dino(img_pil)
+            #print(f"[DEBUG] [6.OK] dino_score: {dino_score}")
 
             # --- Сохранение результатов для изображения ---
             results.append(
@@ -196,11 +246,14 @@ def rank_folder(
                 f"SigLIP={siglip_score:.4f}, Florence={florence_score:.4f}, "
                 f"IQA={iqa_score:.4f}, DINO={dino_score:.4f}"
             )
+            #print(f"[DEBUG] [7] Успешно обработано: {image_filename}")
 
         except Exception as e:
             logger.error(
                 f"Ошибка при вычислении метрик для изображения {image_path}: {e}"
             )
+            import traceback
+            traceback.print_exc() # Добавляем traceback для полной информации
             # Можно либо пропустить изображение, либо остановить процесс.
             # Здесь мы пропускаем и продолжаем.
             continue

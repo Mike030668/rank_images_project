@@ -49,6 +49,9 @@
 git clone https://github.com/Mike030668/rank_images_project.git
 cd rank_images_project
 
+# Обновим инструменты на всякий случай
+!pip install --upgrade pip setuptools wheel
+
 # 2. (Рекомендуется) Создайте виртуальное окружение
 python -m venv venv
 # Активируйте его:

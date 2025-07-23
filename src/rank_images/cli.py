@@ -6,9 +6,35 @@
 изображений из терминала. Он обрабатывает аргументы командной строки,
 загружает модели и вызывает основную функцию ранжирования.
 """
-import argparse
+
 import logging
 import sys
+
+# --- Настройка логирования ДО любых других импортов ---
+# Отключаем базовую конфигурацию, чтобы установить свою
+logging.getLogger().handlers.clear()
+logging.getLogger().setLevel(logging.NOTSET)
+
+# Создаем и настраиваем корневой логгер
+root_logger = logging.getLogger()
+handler = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+handler.setFormatter(formatter)
+root_logger.addHandler(handler)
+root_logger.setLevel(logging.INFO) # Уровень по умолчанию для всего
+
+# --- Отключаем/ограничиваем логи шумных библиотек ---
+noisy_loggers = [
+    "urllib3", "PIL", "matplotlib", "transformers", "torch", "torchvision",
+    "torchaudio", "tokenizers", "datasets", "huggingface_hub", "filelock",
+    "fsspec", "asyncio", "openai", "httpx", "httpcore", "tensorflow", "timm"
+]
+for lib_name in noisy_loggers:
+    logging.getLogger(lib_name).setLevel(logging.WARNING)
+# --- Конец настройки логирования ---
+
+
+import argparse
 from pathlib import Path
 from typing import Optional, Union
 
@@ -52,10 +78,13 @@ def main() -> None:
         formatter_class=argparse.RawTextHelpFormatter, # Для корректного отображения \n в help
     )
     parser.add_argument(
-        "img_dir",
-        type=Path,
-        help="Путь к директории с изображениями для ранжирования.",
-    )
+        "img_dir", 
+        nargs='?', 
+        type=Path, 
+        default=None,
+        help="Путь к директории с изображениями для ранжирования. Обязателен, если не указан --demo."
+        ),
+        
     parser.add_argument(
         "--prompts",
         type=str,
@@ -123,7 +152,7 @@ def main() -> None:
             sys.exit(1)
             
         args.img_dir = demo_images_dir
-        args.prompts = demo_images_dir / "prompts.json"
+        args.prompts = str(demo_images_dir / "prompts.json") # <-- Преобразование в строку
         logger.info("Запуск в демонстрационном режиме.")
         logger.info(f"Папка с изображениями: {args.img_dir}")
         logger.info(f"Файл с промптами: {args.prompts}")
