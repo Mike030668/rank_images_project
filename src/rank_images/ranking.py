@@ -247,7 +247,9 @@ def rank_folder(
 
             # --- НОВАЯ МЕТРИКА: BLIP-2 Score ---
             # Используем те же позитивные чанки, что и для SigLIP
-            blip2_score = get_blip2_match_score(img_pil, positive_chunks_siglip)
+            blip2_pos_score = get_blip2_match_score(img_pil, positive_chunks_siglip)
+            blip2_neg_score = get_blip2_match_score(img_pil, negative_chunks_siglip)
+            blip2_score = blip2_pos_score - blip2_neg_score # <-- Штрафуем на негативные фрагменты
             # -------------------------------
 
             # --- Сохранение результатов для изображения ---
