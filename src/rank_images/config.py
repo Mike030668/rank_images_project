@@ -96,16 +96,19 @@ FLORENCE_MODEL_NAME: str = f"microsoft/Florence-2-{SIZE}"
 """
 str: Имя предобученной модели Florence-2 в Hugging Face Hub.
 """
-# --- НОВОЕ ДЛЯ BLIP-2 ---
-# Используем условие для выбора
-if BLIP2_SIZE == "large":
-    BLIP2_MODEL_NAME: str = "Salesforce/blip2-flan-t5-xl-coco"
-else: # base или по умолчанию
-    BLIP2_MODEL_NAME: str = "Salesforce/blip2-flan-t5-xl"
-
 # --- Пути к папкам ---  
 # Путь к папке для оффлоада слоёв Florence-2, если они не помещаются в память.
 FLORENCE_OFFLOAD_FOLDER: str = "florence_offload"
 """
 str: Имя папки для оффлоада слоёв модели Florence-2 при нехватке памяти GPU.
+"""
+
+# --- НОВОЕ ДЛЯ BLIP-2 ---
+# Используем условие для выбора
+if BLIP2_SIZE == "large":
+    BLIP2_ITM_MODEL_NAME: str = "Salesforce/blip2-itm-vit-L"
+else: # base или по умолчанию
+    BLIP2_ITM_MODEL_NAME: str = "Salesforce/blip2-itm-vit-g"
+"""
+str: Имя предобученной модели BLIP-2 для Image-Text Matching в Hugging Face Hub.
 """

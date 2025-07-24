@@ -289,7 +289,9 @@ def get_dino(img: Image.Image) -> float:
 def get_blip2_match_score(img: Image.Image, prompts: List[str]) -> float:
     """
     Вычисляет среднюю вероятность соответствия (Image-Text Matching) между
-    изображением и списком текстовых промптов с помощью модели BLIP-2.
+    изображением и списком текстовых промптов с помощью модели BLIP-2 ITM.
+
+    Обрабатывает каждый промпт отдельно.
 
     Args:
         img (PIL.Image.Image): Входное изображение.
@@ -302,7 +304,7 @@ def get_blip2_match_score(img: Image.Image, prompts: List[str]) -> float:
     # Проверка, загружена ли модель
     if models.blip2_processor is None or models.blip2_model is None:
         logger.warning(
-            "Модель или процессор BLIP-2 не загружены. "
+            "Модель или процессор BLIP-2 (ITM) не загружены. "
             "Возвращаю 0.0 для BLIP-2 скор."
         )
         return 0.0
@@ -313,46 +315,91 @@ def get_blip2_match_score(img: Image.Image, prompts: List[str]) -> float:
 
     logger.debug(f"Вычисляю BLIP-2 ITM скор для {len(prompts)} промптов.")
 
+    individual_scores = []
+    model_gpu = None
+
     try:
-        # 1. Подготовка входных данных
-        inputs = models.blip2_processor(
-            images=img,
-            text=prompts,
-            return_tensors="pt",
-            padding=True
-        )
-
-        # 2. Преобразование типа данных (если пиксели есть)
-        if "pixel_values" in inputs:
-            inputs["pixel_values"] = inputs["pixel_values"].to(dtype=DTYPE)
-
-        # 3. Перемещение модели на GPU (если доступен) и данных на то же устройство
+        # Перемещаем модель на GPU (если доступен) один раз
         model_gpu = _to_gpu(models.blip2_model)
-        inputs_moved = {k: v.to(model_gpu.device) for k, v in inputs.items()}
 
-        # 4. Прямой проход через модель
-        outputs = model_gpu(**inputs_moved)
+        for prompt in prompts:
+            try:
+                # 1. Подготовка входных данных для ОДНОГО текста
+                inputs = models.blip2_processor(
+                    images=img,
+                    text=prompt, # Один текст
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True
+                )
 
-        # 5. Извлечение и обработка логитов
-        # logits_per_text: [N_prompts, 2] -> вероятности для ["no", "yes"]
-        logits_per_text = outputs.logits_per_text
-        probs = torch.nn.functional.softmax(logits_per_text, dim=-1)
-        match_probs = probs[:, 1] # Вероятности "yes"
+                # 2. Преобразование типа данных
+                if "pixel_values" in inputs:
+                    inputs["pixel_values"] = inputs["pixel_values"].to(dtype=DTYPE)
 
-        # 6. Вычисление среднего значения
-        average_match_prob = match_probs.mean().item()
+                # 3. Перемещение данных на устройство модели
+                inputs_moved = {k: v.to(model_gpu.device) for k, v in inputs.items()}
 
-        logger.debug(f"Средняя вероятность соответствия BLIP-2: {average_match_prob:.4f}")
-        return average_match_prob
+                # 4. Прямой проход через модель ITM с флагом
+                # Используем logits_per_image, как в официальном примере
+                outputs = model_gpu(
+                    **inputs_moved,
+                    use_image_text_matching_head=True
+                )
+
+                # 5. Извлечение и обработка логитов
+                # Согласно примеру, используем logits_per_image
+                logits_per_image = outputs.logits_per_image # Ожидаемая форма: [1, N_classes]
+                logger.debug(f"  Промпт '{prompt[:20]}...': logits_per_image.shape = {logits_per_image.shape}")
+
+                if logits_per_image.dim() != 2 or logits_per_image.shape[0] != 1:
+                    logger.warning(f"Неожиданная форма logits_per_image для промпта '{prompt}': {logits_per_image.shape}")
+                    continue
+
+                num_classes = logits_per_image.shape[1]
+                if num_classes < 1:
+                    logger.warning(f"Недостаточно классов в logits_per_image для промпта '{prompt}': {logits_per_image.shape}")
+                    continue
+
+                # Применяем softmax для получения вероятностей
+                # Согласно примеру, softmax по dim=1
+                probs = torch.nn.functional.softmax(logits_per_image, dim=1)
+
+                # 6. Извлечение вероятности "yes"
+                # probs.shape [1, N_classes]
+                if num_classes >= 2:
+                    # probs[0, 1] - вероятность "yes" для первого (и единственного) изображения
+                    match_prob = probs[0, 1].item()
+                else:
+                    # Если только один класс, предполагаем, что это и есть "yes"
+                    # или вероятность соответствия напрямую
+                    match_prob = probs[0, -1].item()
+
+                individual_scores.append(match_prob)
+                logger.debug(f"  Промпт '{prompt[:20]}...': вероятность соответствия = {match_prob:.4f}")
+
+            except Exception as prompt_e:
+                logger.error(f"Ошибка при обработке промпта '{prompt}': {prompt_e}")
+                continue
+
+        # 7. Вычисление среднего значения
+        if individual_scores:
+            average_match_prob = sum(individual_scores) / len(individual_scores)
+            logger.debug(f"Средняя вероятность соответствия BLIP-2 (ITM) по {len(individual_scores)} промптам: {average_match_prob:.4f}")
+            return average_match_prob
+        else:
+            logger.warning("Не удалось получить ни один скор для BLIP-2 ITM.")
+            return 0.0
 
     except Exception as e:
-        logger.error(f"Ошибка при вычислении BLIP-2 скор: {e}")
+        logger.error(f"Фатальная ошибка при вычислении BLIP-2 скор: {e}", exc_info=True)
         return 0.0
     finally:
-        # 7. Всегда освобождаем модель после использования
-        if 'model_gpu' in locals():
+        # 8. Всегда освобождаем модель после использования
+        if model_gpu is not None:
             _release(model_gpu)
 # --- Конец новой метрики ---
+
 
 
 # --- Шаблон для новой метрики ---

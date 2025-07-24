@@ -19,7 +19,7 @@ from transformers import (
     AutoModelForCausalLM,
     # --- НОВОЕ ДЛЯ BLIP-2 ---
     Blip2Processor,
-    Blip2ForConditionalGeneration,
+    Blip2ForImageTextRetrieval,
     # ------------------------
 )
 
@@ -28,7 +28,7 @@ from .config import (
     SIGLIP_MODEL_NAME,
     DINO_MODEL_NAME,
     FLORENCE_MODEL_NAME,
-    BLIP2_MODEL_NAME,
+    BLIP2_ITM_MODEL_NAME,
     FLORENCE_OFFLOAD_FOLDER,
     DTYPE,
     DEVICE_CPU,
@@ -96,9 +96,9 @@ blip2_processor: Blip2Processor = None
 Blip2Processor: Процессор для модели BLIP-2.
 """
 
-blip2_model: Blip2ForConditionalGeneration = None
+blip2_model: Blip2ForImageTextRetrieval = None # 
 """
-Blip2ForConditionalGeneration: Модель BLIP-2 для Image-Text Matching.
+Blip2ForImageTextRetrieval: Модель BLIP-2 для Image-Text Matching.
 """
 # -------------
 
@@ -181,17 +181,28 @@ def load_models() -> None:
     # --- Загрузка BLIP-2 ---
     logger.info("Начинаю загрузку модели BLIP-2...")
     try:
-        # BLIP-2 будет загружаться на CPU и перемещаться на GPU во время инференса
-        blip2_processor = Blip2Processor.from_pretrained(BLIP2_MODEL_NAME)
-        blip2_model = Blip2ForConditionalGeneration.from_pretrained(
-            BLIP2_MODEL_NAME,
+        blip2_processor = Blip2Processor.from_pretrained(BLIP2_ITM_MODEL_NAME)
+        #print(f"[DEBUG] BLIP-2 Processor type: {type(blip2_processor)}") # <-- Добавлено для отладки
+        blip2_model = Blip2ForImageTextRetrieval.from_pretrained(
+            BLIP2_ITM_MODEL_NAME,
             torch_dtype=DTYPE,
             device_map="cpu",
-            # low_cpu_mem_usage=True # Можно добавить, если модель большая
         ).eval()
-        logger.info("Модель BLIP-2 загружена.")
+        #print(f"[DEBUG] BLIP-2 (ITM) (Model type: {type(blip2_model)}") # <-- Добавлено для отладки
+        logger.info("Модель BLIP-2 (ITM) загружена.")
     except Exception as e:
-        logger.error(f"Ошибка при загрузке модели BLIP-2: {e}")
+        # === ВРЕМЕННЫЙ БЛОК ОТЛАДКИ ===
+        # Принудительно печатаем ошибку, независимо от настройки логгера
+        #print(f"\n[CRITICAL DEBUG] ПОЙМАНО ИСКЛЮЧЕНИЕ ПРИ ЗАГРУЗКЕ BLIP-2!")
+        #print(f"[CRITICAL DEBUG] Тип исключения: {type(e).__name__}")
+        #print(f"[CRITICAL DEBUG] Сообщение: {e}")
+        # Печатаем полный Traceback
+        #import traceback
+        #print(f"[CRITICAL DEBUG] Traceback:")
+        traceback.print_exc()
+        #print("[CRITICAL DEBUG] === КОНЕЦ ОТЛАДКИ ===\n")
+        # === КОНЕЦ ВРЕМЕННОГО БЛОКА ===
+        
         # Продолжаем работу без BLIP-2
         blip2_processor = None
         blip2_model = None
