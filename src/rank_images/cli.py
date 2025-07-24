@@ -50,6 +50,7 @@ from .config import (
     BETA_DEFAULT,
     GAMMA_DEFAULT,
     DELTA_DEFAULT,
+    EPSILON_DEFAULT,
 )
 
 # --- Настройка логгирования для CLI ---
@@ -120,6 +121,14 @@ def main() -> None:
         default=DELTA_DEFAULT,
         help=f"Вес метрики DINOv2 (внутренние признаки изображения). По умолчанию {DELTA_DEFAULT}.",
     )
+    # --- НОВЫЙ АРГУМЕНТ ---
+    parser.add_argument(
+        "--epsilon",
+        type=float,
+        default=EPSILON_DEFAULT,
+        help=f"Вес метрики BLIP-2 (Image-Text Matching). По умолчанию {EPSILON_DEFAULT}.",
+    )
+    # ----------------------
     parser.add_argument(
         "--chunk",
         type=int,
@@ -188,6 +197,7 @@ def main() -> None:
             beta=args.beta,
             gamma=args.gamma,
             delta=args.delta,
+            epsilon=args.epsilon, # <-- Передаем вес BLIP-2
             chunk_size=args.chunk,
         )
         logger.info("Процесс ранжирования завершён успешно.")

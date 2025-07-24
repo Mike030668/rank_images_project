@@ -23,11 +23,10 @@ import torchvision
 from PIL import Image
 
 # Импорт утилит и моделей
+from . import models
 from .device_utils import _to_gpu, _release
-
-from . import models # <-- Импортируем модуль models целиком
-
 from .config import MAX_SIG_TOK, DTYPE, DEVICE_CPU
+
 
 # Настройка логгирования
 logger = logging.getLogger(__name__)
@@ -283,6 +282,77 @@ def get_dino(img: Image.Image) -> float:
 
     logger.debug(f"DINOv2 L2-норма CLS-токена: {l2_norm:.4f}")
     return l2_norm
+
+
+# --- НОВАЯ МЕТРИКА: BLIP-2 Matching Score ---
+@torch.inference_mode()
+def get_blip2_match_score(img: Image.Image, prompts: List[str]) -> float:
+    """
+    Вычисляет среднюю вероятность соответствия (Image-Text Matching) между
+    изображением и списком текстовых промптов с помощью модели BLIP-2.
+
+    Args:
+        img (PIL.Image.Image): Входное изображение.
+        prompts (List[str]): Список текстовых промптов для проверки на соответствие.
+
+    Returns:
+        float: Средняя вероятность соответствия. Если список `prompts` пуст
+               или модель BLIP-2 не загружена, возвращает 0.0.
+    """
+    # Проверка, загружена ли модель
+    if models.blip2_processor is None or models.blip2_model is None:
+        logger.warning(
+            "Модель или процессор BLIP-2 не загружены. "
+            "Возвращаю 0.0 для BLIP-2 скор."
+        )
+        return 0.0
+
+    if not prompts:
+        logger.debug("Список промптов для BLIP-2 пуст. Возвращаю 0.0.")
+        return 0.0
+
+    logger.debug(f"Вычисляю BLIP-2 ITM скор для {len(prompts)} промптов.")
+
+    try:
+        # 1. Подготовка входных данных
+        inputs = models.blip2_processor(
+            images=img,
+            text=prompts,
+            return_tensors="pt",
+            padding=True
+        )
+
+        # 2. Преобразование типа данных (если пиксели есть)
+        if "pixel_values" in inputs:
+            inputs["pixel_values"] = inputs["pixel_values"].to(dtype=DTYPE)
+
+        # 3. Перемещение модели на GPU (если доступен) и данных на то же устройство
+        model_gpu = _to_gpu(models.blip2_model)
+        inputs_moved = {k: v.to(model_gpu.device) for k, v in inputs.items()}
+
+        # 4. Прямой проход через модель
+        outputs = model_gpu(**inputs_moved)
+
+        # 5. Извлечение и обработка логитов
+        # logits_per_text: [N_prompts, 2] -> вероятности для ["no", "yes"]
+        logits_per_text = outputs.logits_per_text
+        probs = torch.nn.functional.softmax(logits_per_text, dim=-1)
+        match_probs = probs[:, 1] # Вероятности "yes"
+
+        # 6. Вычисление среднего значения
+        average_match_prob = match_probs.mean().item()
+
+        logger.debug(f"Средняя вероятность соответствия BLIP-2: {average_match_prob:.4f}")
+        return average_match_prob
+
+    except Exception as e:
+        logger.error(f"Ошибка при вычислении BLIP-2 скор: {e}")
+        return 0.0
+    finally:
+        # 7. Всегда освобождаем модель после использования
+        if 'model_gpu' in locals():
+            _release(model_gpu)
+# --- Конец новой метрики ---
 
 
 # --- Шаблон для новой метрики ---

@@ -27,15 +27,24 @@ from tqdm.auto import tqdm
 
 # Импорт вспомогательных функций и компонентов
 from .utils import normalize_metrics, calculate_net_score
-from .data_processing import build_dataframe, _chunks, _z
+from .data_processing import build_dataframe, _chunks
 from .metrics import (
     get_siglip_score,
     get_florence_score,
     get_iqa,
     get_dino,
+    get_blip2_match_score
 )
 # Импорт конфигурации
-from .config import ALPHA_DEFAULT, BETA_DEFAULT, GAMMA_DEFAULT, DELTA_DEFAULT, MAX_SIG_TOK
+from .config import (
+    ALPHA_DEFAULT,
+    BETA_DEFAULT,
+    GAMMA_DEFAULT,
+    DELTA_DEFAULT,
+    # --- НОВОЕ ---
+    EPSILON_DEFAULT,
+    # ------------
+)
 
 # Настройка логгирования
 logger = logging.getLogger(__name__)
@@ -48,6 +57,7 @@ def rank_folder(
     beta: float = BETA_DEFAULT,
     gamma: float = GAMMA_DEFAULT,
     delta: float = DELTA_DEFAULT,
+    epsilon: float = EPSILON_DEFAULT, # Вес для BLIP-2
     chunk_size: Optional[int] = None,  # Может быть None
 ) -> pd.DataFrame:
     """
@@ -234,6 +244,11 @@ def rank_folder(
             dino_score = get_dino(img_pil)
             #print(f"[DEBUG] [6.OK] dino_score: {dino_score}")
 
+            # --- НОВАЯ МЕТРИКА: BLIP-2 Score ---
+            # Используем те же позитивные чанки, что и для SigLIP
+            blip2_score = get_blip2_match_score(img_pil, positive_chunks_siglip)
+            # -------------------------------
+
             # --- Сохранение результатов для изображения ---
             results.append(
                 {
@@ -242,6 +257,7 @@ def rank_folder(
                     "flor": florence_score,   # Исходное значение
                     "iqa": iqa_score,         # Исходное значение
                     "dino": dino_score,       # Исходное значение
+                    "blip2": blip2_score,     # Исходное значение
                 }
             )
             logger.debug(
@@ -274,7 +290,7 @@ def rank_folder(
     
     # --- ЦЕНТРАЛИЗОВАННАЯ НОРМАЛИЗАЦИЯ ---
     # Определяем список метрик для нормализации
-    metrics_to_normalize = ["sig", "flor", "iqa", "dino"] 
+    mmetrics_to_normalize = ["sig", "flor", "iqa", "dino", "blip2"] # <-- Добавили "blip2"
     # При добавлении новой метрики, просто добавьте её имя в этот список:
     # metrics_to_normalize.append("new_metric")
 
@@ -300,11 +316,12 @@ def rank_folder(
             + beta * res_dict.get("flor_norm", 0.0)
             + gamma * res_dict.get("iqa_norm", 0.0)
             + delta * res_dict.get("dino_norm", 0.0)
+            + epsilon * res_dict.get("blip2_norm", 0.0) # <-- Добавили BLIP-2
             # При добавлении новой метрики, добавьте её взвешенное нормированное значение:
             # + epsilon * res_dict.get("new_metric_norm", 0.0) 
         )
         # Нормализуем по сумме весов
-        total_weight = alpha + beta + gamma + delta # + epsilon # Обновите при добавлении
+        total_weight = alpha + beta + gamma + delta + epsilon # + epsilon # Обновите при добавлении
         if total_weight > 0:
             res_dict["total"] = total_score / total_weight
         else:

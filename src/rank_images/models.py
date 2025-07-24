@@ -8,15 +8,19 @@ Florence-2, CLIP-IQA) и предоставляет к ним доступ че�
 """
 import logging
 from typing import TYPE_CHECKING
-
-# Импорт библиотек для работы с моделями
 import torch
 from torchmetrics.multimodal import CLIPImageQualityAssessment
+
+# --- ИМПОРТ BLIP-2 ---
 from transformers import (
     AutoProcessor,
     AutoModel,
     AutoProcessor as FlorenceProcessor,
     AutoModelForCausalLM,
+    # --- НОВОЕ ДЛЯ BLIP-2 ---
+    Blip2Processor,
+    Blip2ForConditionalGeneration,
+    # ------------------------
 )
 
 # Импорт конфигурационных констант
@@ -24,6 +28,7 @@ from .config import (
     SIGLIP_MODEL_NAME,
     DINO_MODEL_NAME,
     FLORENCE_MODEL_NAME,
+    BLIP2_MODEL_NAME,
     FLORENCE_OFFLOAD_FOLDER,
     DTYPE,
     DEVICE_CPU,
@@ -85,6 +90,17 @@ AutoModelForCausalLM: Модель Florence-2 для задач генераци
                       Загружается с `device_map="auto"` для оптимального распределения.
 """
 
+# --- BLIP-2 ---
+blip2_processor: Blip2Processor = None
+"""
+Blip2Processor: Процессор для модели BLIP-2.
+"""
+
+blip2_model: Blip2ForConditionalGeneration = None
+"""
+Blip2ForConditionalGeneration: Модель BLIP-2 для Image-Text Matching.
+"""
+# -------------
 
 def _load_florence(local_only: bool) -> AutoModelForCausalLM:
     """
@@ -121,6 +137,7 @@ def load_models() -> None:
     Она устанавливает значения глобальных переменных моделей.
     """
     global iqa_metric, sig_proc, sig_model, dino_proc, dino_model, flor_proc, flor_model
+    global blip2_processor, blip2_model
 
     logger.info("Начинаю загрузку моделей (на CPU)...")
     #print("[DEBUG_LOAD_MODELS] Начало выполнения load_models()") # <-- Добавлено
@@ -160,6 +177,26 @@ def load_models() -> None:
 
     # Загрузчик процессора для Florence-2
     flor_proc = FlorenceProcessor.from_pretrained(FLORENCE_MODEL_NAME, trust_remote_code=True)
+
+    # --- Загрузка BLIP-2 ---
+    logger.info("Начинаю загрузку модели BLIP-2...")
+    try:
+        # BLIP-2 будет загружаться на CPU и перемещаться на GPU во время инференса
+        blip2_processor = Blip2Processor.from_pretrained(BLIP2_MODEL_NAME)
+        blip2_model = Blip2ForConditionalGeneration.from_pretrained(
+            BLIP2_MODEL_NAME,
+            torch_dtype=DTYPE,
+            device_map="cpu",
+            # low_cpu_mem_usage=True # Можно добавить, если модель большая
+        ).eval()
+        logger.info("Модель BLIP-2 загружена.")
+    except Exception as e:
+        logger.error(f"Ошибка при загрузке модели BLIP-2: {e}")
+        # Продолжаем работу без BLIP-2
+        blip2_processor = None
+        blip2_model = None
+        logger.warning("Модель BLIP-2 не будет доступна.")
+    # --- Конец загрузки BLIP-2 ---
 
     logger.info("Все модели успешно загружены и готовы к использованию.")
     #print("[DEBUG_LOAD_MODELS] load_models() завершена.") # <-- Добавлено

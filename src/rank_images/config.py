@@ -69,11 +69,16 @@ DELTA_DEFAULT: float = 0.1
 float: Вес метрики DINOv2 (внутренние признаки изображения) в итоговом балле.
        По умолчанию 0.1.
 """
-
+# --- НОВОЕ ДЛЯ BLIP-2 ---
+EPSILON_DEFAULT: float = 0.3
+"""
+float: Вес метрики BLIP-2 (Image-Text Matching) в итоговом балле.
+       По умолчанию 0.3.
+"""
+# --- Имена моделей ---
 SIZE: str = "base" # "large"
 PATCH: str = "16-224" # "large"
 
-# --- Имена моделей ---
 # Константы для путей к предобученным моделям Hugging Face.
 SIGLIP_MODEL_NAME: str = f"google/siglip2-{SIZE}-patch{PATCH}"
 """
@@ -89,8 +94,13 @@ FLORENCE_MODEL_NAME: str = f"microsoft/Florence-2-{SIZE}"
 """
 str: Имя предобученной модели Florence-2 в Hugging Face Hub.
 """
+# --- НОВОЕ ДЛЯ BLIP-2 ---
+BLIP2_MODEL_NAME: str = "Salesforce/blip2-flan-t5-xl" # Используем более легкую версию
+"""
+str: Имя предобученной модели BLIP-2 в Hugging Face Hub.
+"""
 
-# --- Пути к папкам ---
+# --- Пути к папкам ---  
 # Путь к папке для оффлоада слоёв Florence-2, если они не помещаются в память.
 FLORENCE_OFFLOAD_FOLDER: str = "florence_offload"
 """
