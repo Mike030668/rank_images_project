@@ -18,7 +18,7 @@
 """
 import logging
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
 
 import numpy as np
 import pandas as pd
@@ -26,6 +26,7 @@ from PIL import Image
 from tqdm.auto import tqdm
 
 # Импорт вспомогательных функций и компонентов
+from .utils import normalize_metrics, calculate_net_score
 from .data_processing import build_dataframe, _chunks, _z
 from .metrics import (
     get_siglip_score,
@@ -178,13 +179,15 @@ def rank_folder(
             negative_chunks_siglip = _make_chunks(row["negative"], row["negative2"])
             #print(f"[DEBUG] [2.OK] negative_chunks_siglip: {negative_chunks_siglip}")
             # --- Вычисление метрик ---
+
             #print(f"[DEBUG] [3] Начинаем SigLIP...")
             # --- SigLIP Score ---
-            siglip_pos_score = get_siglip_score(img_pil, positive_chunks_siglip)
-            #print(f"[DEBUG] [3.OK] siglip_pos_score: {siglip_pos_score}")
-            siglip_neg_score = get_siglip_score(img_pil, negative_chunks_siglip)
-            #print(f"[DEBUG] [3.OK] siglip_neg_score: {siglip_neg_score}")
-            siglip_score = siglip_pos_score - siglip_neg_score
+            siglip_score = calculate_net_score(
+                get_score_func=get_siglip_score,
+                img=img_pil,
+                positive_prompts=positive_chunks_siglip,
+                negative_prompts=negative_chunks_siglip
+            )
             #print(f"[DEBUG] [3.OK] siglip_score: {siglip_score}")
 
             #print(f"[DEBUG] [4] Начинаем Florence...")
@@ -235,10 +238,10 @@ def rank_folder(
             results.append(
                 {
                     "image": image_filename,
-                    "sig": siglip_score,
-                    "flor": florence_score,
-                    "iqa": iqa_score,
-                    "dino": dino_score,
+                    "sig": siglip_score,      # Исходное значение
+                    "flor": florence_score,   # Исходное значение
+                    "iqa": iqa_score,         # Исходное значение
+                    "dino": dino_score,       # Исходное значение
                 }
             )
             logger.debug(
@@ -269,41 +272,44 @@ def rank_folder(
     # --- 4. Нормализация метрик и вычисление итогового балла ---
     logger.info("Нормализую метрики и вычисляю итоговый балл...")
     
-    # Преобразуем список результатов в массивы NumPy для удобства
-    sig_scores = np.array([r["sig"] for r in results])
-    flor_scores = np.array([r["flor"] for r in results])
-    iqa_scores = np.array([r["iqa"] for r in results])
-    dino_scores = np.array([r["dino"] for r in results])
+    # --- ЦЕНТРАЛИЗОВАННАЯ НОРМАЛИЗАЦИЯ ---
+    # Определяем список метрик для нормализации
+    metrics_to_normalize = ["sig", "flor", "iqa", "dino"] 
+    # При добавлении новой метрики, просто добавьте её имя в этот список:
+    # metrics_to_normalize.append("new_metric")
 
-    # Нормализуем каждую метрику по Z-оценке
-    sig_z = _z(sig_scores)
-    flor_z = _z(flor_scores)
-    iqa_z = _z(iqa_scores)
-    dino_z = _z(dino_scores)
+    # Вызываем универсальную функцию нормализации
+    normalized_data: Dict[str, np.ndarray] = normalize_metrics(results, metrics_to_normalize)
 
-    # Обновляем результаты нормализованными значениями
+    # Обновляем словари в `results` нормализованными значениями
+    # Используем ключи из normalized_data (например, "sig_norm")
+    for metric_norm_name, norm_values in normalized_data.items():
+        # Извлекаем оригинальное имя метрики (убираем "_norm")
+        original_metric_name = metric_norm_name[:-5] # Убираем последние 5 символов "_norm"
+        for i, res_dict in enumerate(results):
+            res_dict[metric_norm_name] = norm_values[i]
+            # Также можно обновить оригинальное значение, если это нужно
+            # res_dict[original_metric_name] = norm_values[i] # Обычно этого не делают
+
+    # --- Вычисление итогового балла ---
     for i, res_dict in enumerate(results):
-        res_dict.update(
-            {
-                "sig": sig_z[i],
-                "flor": flor_z[i],
-                "iqa": iqa_z[i],
-                "dino": dino_z[i],
-            }
-        )
-        # Вычисляем итоговый балл как взвешенную сумму
+        # Вычисляем итоговый балл как взвешенную сумму НОРМАЛИЗОВАННЫХ метрик
+        # ВАЖНО: используем ключи с "_norm"
         total_score = (
-            alpha * res_dict["sig"]
-            + beta * res_dict["flor"]
-            + gamma * res_dict["iqa"]
-            + delta * res_dict["dino"]
+            alpha * res_dict.get("sig_norm", 0.0)
+            + beta * res_dict.get("flor_norm", 0.0)
+            + gamma * res_dict.get("iqa_norm", 0.0)
+            + delta * res_dict.get("dino_norm", 0.0)
+            # При добавлении новой метрики, добавьте её взвешенное нормированное значение:
+            # + epsilon * res_dict.get("new_metric_norm", 0.0) 
         )
-        # Нормализуем по сумме весов для получения значения в привычном диапазоне
-        total_weight = alpha + beta + gamma + delta
+        # Нормализуем по сумме весов
+        total_weight = alpha + beta + gamma + delta # + epsilon # Обновите при добавлении
         if total_weight > 0:
             res_dict["total"] = total_score / total_weight
         else:
-            res_dict["total"] = 0.0 # Избегаем деления на 0, если все веса 0
+            res_dict["total"] = 0.0
+    # --- Конец нормализации и вычисления итогового балла ---
 
     # --- 5. Сортировка и сохранение ---
     # Создаем DataFrame из результатов
@@ -324,17 +330,12 @@ def rank_folder(
 
 
 # --- Шаблон для расширения ---
-# При добавлении новой метрики `get_new_metric_score`:
-# 1. Добавьте её импорт вверху файла.
-# 2. Добавьте новый аргумент веса (например, `epsilon: float = EPSILON_DEFAULT`)
-#    в сигнатуру функции `rank_folder`.
-# 3. В цикле обработки изображений:
-#    a. Вызовите `new_metric_score = get_new_metric_score(img_pil, ...)`.
-#    b. Добавьте `"new_metric": new_metric_score` в словарь `results`.
-# 4. После цикла:
-#    a. Преобразуйте значения в массив NumPy.
-#    b. Нормализуйте с помощью `_z(...)`.
-#    c. Обновите словари в `results` нормализованным значением.
-#    d. Добавьте нормализованное значение в вычисление `total_score`,
-#       используя новый вес `epsilon`.
-# 5. Не забудьте обновить документацию функции `rank_folder`.
+# Для добавления новой метрики:
+# 1. Создайте функцию в `metrics.py` (см. `example_metric.py` как шаблон).
+# 2. Импортируйте её в `ranking.py`.
+# 3. Добавьте её вес в аргументы `rank_folder` и `config.py`.
+# 4. Вызовите её в цикле обработки изображений.
+# 5. Добавьте её имя в список `metrics_to_normalize` перед вызовом `utils.normalize_metrics`.
+# 6. Добавьте её нормализованный вклад в расчет `total_score`.
+# 7. Добавьте её вес в аргументы CLI (`cli.py`).
+# --- Конец шаблона ---
