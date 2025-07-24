@@ -44,6 +44,7 @@ from .config import (
     # --- НОВОЕ ---
     EPSILON_DEFAULT,
     # ------------
+    MAX_SIG_TOK  # Максимальное количество токенов для SigLIP
 )
 
 # Настройка логгирования
@@ -290,7 +291,7 @@ def rank_folder(
     
     # --- ЦЕНТРАЛИЗОВАННАЯ НОРМАЛИЗАЦИЯ ---
     # Определяем список метрик для нормализации
-    mmetrics_to_normalize = ["sig", "flor", "iqa", "dino", "blip2"] # <-- Добавили "blip2"
+    metrics_to_normalize = ["sig", "flor", "iqa", "dino", "blip2"] # <-- Добавили "blip2"
     # При добавлении новой метрики, просто добавьте её имя в этот список:
     # metrics_to_normalize.append("new_metric")
 

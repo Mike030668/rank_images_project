@@ -78,6 +78,8 @@ float: Вес метрики BLIP-2 (Image-Text Matching) в итоговом б
 # --- Имена моделей ---
 SIZE: str = "base" # "large"
 PATCH: str = "16-224" # "large"
+# BLIP2_SIZE: str = "base" # или "large"
+BLIP2_SIZE: str = SIZE # или "large" (если нужно использовать большую версию)
 
 # Константы для путей к предобученным моделям Hugging Face.
 SIGLIP_MODEL_NAME: str = f"google/siglip2-{SIZE}-patch{PATCH}"
@@ -95,10 +97,11 @@ FLORENCE_MODEL_NAME: str = f"microsoft/Florence-2-{SIZE}"
 str: Имя предобученной модели Florence-2 в Hugging Face Hub.
 """
 # --- НОВОЕ ДЛЯ BLIP-2 ---
-BLIP2_MODEL_NAME: str = "Salesforce/blip2-flan-t5-xl" # Используем более легкую версию
-"""
-str: Имя предобученной модели BLIP-2 в Hugging Face Hub.
-"""
+# Используем условие для выбора
+if BLIP2_SIZE == "large":
+    BLIP2_MODEL_NAME: str = "Salesforce/blip2-flan-t5-xl-coco"
+else: # base или по умолчанию
+    BLIP2_MODEL_NAME: str = "Salesforce/blip2-flan-t5-xl"
 
 # --- Пути к папкам ---  
 # Путь к папке для оффлоада слоёв Florence-2, если они не помещаются в память.
