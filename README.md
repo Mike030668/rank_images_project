@@ -86,9 +86,12 @@ uv venv
 #   Windows:     .venv\Scripts\activate
 
 # 4. Установите проект и зависимости, указав дополнительный индекс для PyTorch
+
 uv pip install --prerelease=allow \
   --extra-index-url https://download.pytorch.org/whl/nightly/cu121 \
+  --index-strategy unsafe-best-match \
   -e .
+
 
 # 5. (Опционально) Установите дополнительные зависимости
 # uv pip install -e .[notebook]
