@@ -51,7 +51,10 @@ from .config import (
     GAMMA_DEFAULT,
     DELTA_DEFAULT,
     EPSILON_DEFAULT,
+    ZETA_DEFAULT
 )
+# --- ИМПОРТ МОДУЛЯ КОНФИГУРАЦИИ ---
+from .pipeline_config import load_pipeline_config, get_default_weights, get_chunk_size
 
 # --- Настройка логгирования для CLI ---
 # Базовая настройка логгера для вывода в консоль
@@ -69,12 +72,13 @@ def main() -> None:
     Обрабатывает аргументы командной строки, загружает модели и
     запускает процесс ранжирования.
     """
-    # --- Определение и парсинг аргументов ---
+    # --- АРГУМЕНТЫ ДЛЯ ВЕСОВ ---
+    # Эти аргументы позволяют переопределить веса из JSON-конфига
     parser = argparse.ArgumentParser(
         description=(
             "Ранжирует изображения в заданной директории на основе "
             "текстовых промптов и внутреннего качества, используя "
-            "SigLIP-2, Florence-2, CLIP-IQA и DINOv2."
+            "SigLIP-2, Florence-2, CLIP-IQA, DINOv2, BLIP-2 ..., см. pipeline_config.get_enabled_metrics()"
         ),
         formatter_class=argparse.RawTextHelpFormatter, # Для корректного отображения \n в help
     )
@@ -100,33 +104,52 @@ def main() -> None:
     parser.add_argument(
         "--alpha",
         type=float,
-        default=ALPHA_DEFAULT,
+        default=None,
         help=f"Вес метрики SigLIP (схожесть изображения и текста). По умолчанию {ALPHA_DEFAULT}.",
     )
     parser.add_argument(
         "--beta",
         type=float,
-        default=BETA_DEFAULT,
+        default=None,
         help=f"Вес метрики Florence-2 (поиск объектов по запросу). По умолчанию {BETA_DEFAULT}.",
     )
     parser.add_argument(
         "--gamma",
         type=float,
-        default=GAMMA_DEFAULT,
+        default=None,
         help=f"Вес метрики CLIP-IQA (общее качество изображения). По умолчанию {GAMMA_DEFAULT}.",
     )
     parser.add_argument(
         "--delta",
         type=float,
-        default=DELTA_DEFAULT,
+        default=None,
         help=f"Вес метрики DINOv2 (внутренние признаки изображения). По умолчанию {DELTA_DEFAULT}.",
     )
-    # --- НОВЫЙ АРГУМЕНТ ---
+
     parser.add_argument(
         "--epsilon",
         type=float,
-        default=EPSILON_DEFAULT,
+        default=None,
         help=f"Вес метрики BLIP-2 (Image-Text Matching). По умолчанию {EPSILON_DEFAULT}.",
+    )
+
+    parser.add_argument(
+        "--zeta", 
+        type=float,
+        default=None, 
+        help=f"Вес метрики BLIP Caption + BERTScore к prompt. По умолчанию берётся из JSON-конфига или {ZETA_DEFAULT}.",
+    )
+
+    #--- НОВЫЙ АРГУМЕНТ ---
+    parser.add_argument(
+        "--pipeline-config",
+        type=str, # <-- Принимаем путь к файлу как строку
+        default=None,
+        help=(
+            "Путь к JSON-файлу конфигурации пайплайна. "
+            "Определяет, какие метрики включены и их веса по умолчанию. "
+            "Если не указан, используется стандартная конфигурация."
+        ),
     )
     # ----------------------
     parser.add_argument(
@@ -147,6 +170,27 @@ def main() -> None:
 
     # --- Парсинг аргументов ---
     args = parser.parse_args()
+
+    # --- Загрузка и валидация JSON-конфигурации пайплайна ---
+    pipeline_config = load_pipeline_config(args.pipeline_config)
+    # Извлекаем веса по умолчанию из конфига
+    default_weights_from_config = get_default_weights(pipeline_config)
+    # Извлекаем chunk_size из конфига
+    chunk_size_from_config = get_chunk_size(pipeline_config)
+    # ------------------------------
+
+    # --- Определение финальных значений весов ---
+    # Если вес НЕ задан через CLI (--alpha None), используем значение из JSON-конфига или дефолтное
+    final_alpha = args.alpha if args.alpha is not None else default_weights_from_config.get("alpha", ALPHA_DEFAULT)
+    final_beta = args.beta if args.beta is not None else default_weights_from_config.get("beta", BETA_DEFAULT)
+    final_gamma = args.gamma if args.gamma is not None else default_weights_from_config.get("gamma", GAMMA_DEFAULT)
+    final_delta = args.delta if args.delta is not None else default_weights_from_config.get("delta", DELTA_DEFAULT)
+    final_epsilon = args.epsilon if args.epsilon is not None else default_weights_from_config.get("epsilon", EPSILON_DEFAULT)
+    final_zeta = args.zeta if args.zeta is not None else default_weights_from_config.get("zeta", ZETA_DEFAULT) # <-- НОВОЕ
+    # --- Определение финального chunk_size ---
+    # Приоритет: CLI > JSON-config > config.py
+    final_chunk_size = args.chunk if args.chunk is not None else chunk_size_from_config
+    # ------------------------------------------
 
     # --- Логика обработки аргументов ---
     # Если указан --demo, переопределяем img_dir и prompts
@@ -193,13 +237,20 @@ def main() -> None:
         result_df: pd.DataFrame = rank_folder(
             img_dir=args.img_dir,
             prompts_in=args.prompts,
-            alpha=args.alpha,
-            beta=args.beta,
-            gamma=args.gamma,
-            delta=args.delta,
-            epsilon=args.epsilon, # <-- Передаем вес BLIP-2
-            chunk_size=args.chunk,
+            # --- ПЕРЕДАЁМ ФИНАЛЬНЫЕ ЗНАЧЕНИЯ ---
+            alpha=final_alpha,
+            beta=final_beta,
+            gamma=final_gamma,
+            delta=final_delta,
+            epsilon=final_epsilon,
+            zeta=final_zeta, 
+            # ----------------------------------
+            chunk_size=final_chunk_size, # <-- Обновлённый chunk_size
+            # --- ПЕРЕДАЁМ КОНФИГУРАЦИЮ ПАЙПЛАЙНА ---
+            pipeline_config=pipeline_config, 
+            # --------------------------------------
         )
+
         logger.info("Процесс ранжирования завершён успешно.")
         # Выводим первые несколько строк результата в консоль
         print("\n--- Результаты ранжирования (первые 5 строк) ---")

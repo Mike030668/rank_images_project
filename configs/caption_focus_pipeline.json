@@ -1,0 +1,17 @@
+// configs/caption_focus_pipeline.json
+{
+  "pipeline": {
+    "enabled_metrics": ["blip_cap", "iqa"],
+    "default_weights": {
+      "alpha": 0.0,
+      "beta": 0.0,
+      "gamma": 0.5,
+      "delta": 0.0,
+      "epsilon": 0.0,
+      "zeta": 0.5
+    }
+  },
+  "processing": {
+    "chunk_size": 128
+  }
+}
