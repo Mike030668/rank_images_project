@@ -20,6 +20,8 @@ from transformers import (
     # --- НОВОЕ ДЛЯ BLIP-2 ---
     Blip2Processor,
     Blip2ForImageTextRetrieval,
+    BlipProcessor, # <-- Импортируем BlipProcessor
+    BlipForConditionalGeneration, # <-- Импортируем BlipForConditionalGeneration
     # ------------------------
 )
 
@@ -30,6 +32,7 @@ from .config import (
     FLORENCE_MODEL_NAME,
     BLIP2_ITM_MODEL_NAME,
     FLORENCE_OFFLOAD_FOLDER,
+    BLIP_CAPTION_MODEL_NAME, 
     DTYPE,
     DEVICE_CPU,
 )
@@ -100,6 +103,17 @@ blip2_model: Blip2ForImageTextRetrieval = None #
 """
 Blip2ForImageTextRetrieval: Модель BLIP-2 для Image-Text Matching.
 """
+
+# --- BLIP Caption ---
+blip_cap_processor: BlipProcessor = None
+"""
+BlipProcessor: Процессор для модели BLIP Caption.
+"""
+
+blip_cap_model: BlipForConditionalGeneration = None
+"""
+BlipForConditionalGeneration: Модель BLIP для генерации описаний (captioning).
+"""
 # -------------
 
 def _load_florence(local_only: bool) -> AutoModelForCausalLM:
@@ -138,6 +152,7 @@ def load_models() -> None:
     """
     global iqa_metric, sig_proc, sig_model, dino_proc, dino_model, flor_proc, flor_model
     global blip2_processor, blip2_model
+    global blip_cap_processor, blip_cap_model
 
     logger.info("Начинаю загрузку моделей (на CPU)...")
     #print("[DEBUG_LOAD_MODELS] Начало выполнения load_models()") # <-- Добавлено
@@ -191,6 +206,7 @@ def load_models() -> None:
         #print(f"[DEBUG] BLIP-2 (ITM) (Model type: {type(blip2_model)}") # <-- Добавлено для отладки
         logger.info("Модель BLIP-2 (ITM) загружена.")
     except Exception as e:
+
         # === ВРЕМЕННЫЙ БЛОК ОТЛАДКИ ===
         # Принудительно печатаем ошибку, независимо от настройки логгера
         #print(f"\n[CRITICAL DEBUG] ПОЙМАНО ИСКЛЮЧЕНИЕ ПРИ ЗАГРУЗКЕ BLIP-2!")
@@ -199,7 +215,7 @@ def load_models() -> None:
         # Печатаем полный Traceback
         #import traceback
         #print(f"[CRITICAL DEBUG] Traceback:")
-        traceback.print_exc()
+        #traceback.print_exc()
         #print("[CRITICAL DEBUG] === КОНЕЦ ОТЛАДКИ ===\n")
         # === КОНЕЦ ВРЕМЕННОГО БЛОКА ===
         
@@ -208,6 +224,25 @@ def load_models() -> None:
         blip2_model = None
         logger.warning("Модель BLIP-2 не будет доступна.")
     # --- Конец загрузки BLIP-2 ---
+
+    # --- Загрузка BLIP Caption ---
+    logger.info("Начинаю загрузку модели BLIP Caption...")
+    try:
+        # BLIP Caption будет загружаться на CPU и перемещаться на GPU во время инференса
+        blip_cap_processor = BlipProcessor.from_pretrained(BLIP_CAPTION_MODEL_NAME)
+        blip_cap_model = BlipForConditionalGeneration.from_pretrained(
+            BLIP_CAPTION_MODEL_NAME,
+            torch_dtype=DTYPE,
+            device_map="cpu"
+        ).eval()
+        logger.info("Модель BLIP Caption загружена.")
+    except Exception as e:
+        logger.error(f"Ошибка при загрузке модели BLIP Caption: {e}", exc_info=True)
+        # Продолжаем работу без BLIP Caption
+        blip_cap_processor = None
+        blip_cap_model = None
+        logger.warning("Модель BLIP Caption не будет доступна.")
+    # --- Конец загрузки BLIP Caption ---
 
     logger.info("Все модели успешно загружены и готовы к использованию.")
     #print("[DEBUG_LOAD_MODELS] load_models() завершена.") # <-- Добавлено

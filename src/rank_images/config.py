@@ -76,10 +76,10 @@ float: Вес метрики BLIP-2 (Image-Text Matching) в итоговом б
        По умолчанию 0.3.
 """
 
-ZETA_DEFAULT: float = 0.0 # <-- Вес для BLIP Caption (временно отключен)
+ZETA_DEFAULT: float = 0.25
 """
 float: Вес метрики BLIP Caption + BERTScore к prompt в итоговом балле.
-       По умолчанию 0.0 (временно отключена).
+       По умолчанию 0.25.
 """
 
 # --- Имена моделей ---
@@ -111,7 +111,7 @@ else: # base или по умолчанию
     BLIP2_ITM_MODEL_NAME: str = "Salesforce/blip2-itm-vit-g"
 
 
-BLIP_CAPTION_MODEL_NAME: str = "Salesforce/blip-image-captioning-base" # <-- Имя модели BLIP Caption
+BLIP_CAPTION_MODEL_NAME: str = f"Salesforce/blip-image-captioning-{SIZE}"# <-- Имя модели BLIP Caption
 """
 str: Имя предобученной модели BLIP для генерации описаний (captioning) в Hugging Face Hub.
 """
