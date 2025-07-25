@@ -112,3 +112,21 @@ else: # base или по умолчанию
 """
 str: Имя предобученной модели BLIP-2 для Image-Text Matching в Hugging Face Hub.
 """
+
+
+# --- НОВОЕ ДЛЯ BLIP Caption (ЗАГЛУШКА) ---
+ZETA_DEFAULT: float = 0.0 # <-- Вес 0.0, чтобы не учитывать в расчетах пока
+"""
+float: Вес метрики BLIP Caption + BERTScore к prompt в итоговом балле.
+       По умолчанию 0.0 (временно отключена).
+"""
+
+# --- Имена моделей ---
+# ... (другие модели) ...
+# --- НОВОЕ ДЛЯ BLIP Caption (ЗАГЛУШКА) ---
+BLIP_CAPTION_MODEL_NAME: str = "Salesforce/blip-image-captioning-base" # Имя модели
+"""
+str: Имя предобученной модели BLIP для генерации описаний (captioning) в Hugging Face Hub.
+     Используется как заглушка для будущей метрики.
+"""
+# ------------------------
