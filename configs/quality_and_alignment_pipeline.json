@@ -1,0 +1,18 @@
+// configs/quality_and_alignment_pipeline.json
+{
+  "pipeline": {
+    "enabled_metrics": ["sig", "flor", "iqa", "dino", "blip2"],
+    "default_weights": {
+      "alpha": 0.6,
+      "beta": 0.5,
+      "gamma": 0.3,
+      "delta": 0.2,
+      "epsilon": 0.4,
+      "zeta": 0.0,
+      "theta": 0.0
+    }
+  },
+  "processing": {
+    "chunk_size": null
+  }
+}
