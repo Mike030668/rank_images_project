@@ -275,6 +275,10 @@ rank_images_project/
 ├── README.md                 # Этот файл
 ├── pyproject.toml            # Конфигурация проекта и зависимостей
 ├── .gitignore                # Файлы и папки, игнорируемые Git
+├── configs/                  # default and customs jsons настройко конфигурации пайплайна для инференса
+│       ├── default_pipeline.json                     # Пример 1
+│       ├── quality_and_alignment_pipeline.json       # Пример 2
+│       └── ......            # 
 ├── data/
 │   ├── raw/                  # (Опционально) Ваши собственные изображения для обработки
 │   └── demo_images/          # Демонстрационные изображения и промпты
@@ -289,7 +293,8 @@ rank_images_project/
 │       ├── device_utils.py   # Функции управления устройствами (_to_gpu, _release)
 │       ├── models.py         # Загрузка и хранение моделей
 │       ├── data_processing.py# Вспомогательные функции обработки данных
-│       ├── metrics.py        # Функции вычисления метрик
+│       ├── metrics.py        # Функции вычисления метрик 
+│       ├── pipeline_config.py  # конфигуратор пайплайна ранжирования
 │       ├── utils.py          # Общие утилиты (нормализация и т.д.)
 │       ├── example_metric.py # Пример шаблона для добавления новой метрики
 │       ├── ranking.py        # Основная логика ранжирования
