@@ -224,6 +224,7 @@ def rank_folder(
                         iqa_score = get_iqa(img_pil)
                         res_dict["iqa"] = iqa_score
                         logger.debug(f"  IQA Score: {iqa_score:.4f}")
+                    
 
                     elif metric_name == "dino":
                         dino_score = get_dino(img_pil)
@@ -240,12 +241,14 @@ def rank_folder(
                     elif metric_name == "blip_cap":
                         blip_caption_score = get_blip_caption_bertscore(img_pil, row["prompt"])
                         res_dict["blip_cap"] = blip_caption_score
-                        logger.debug(f"  BLIP Caption Score: {blip_caption_score:.4f}")
+                        #logger.debug(f"  BLIP Caption Score: {blip_caption_score:.4f}")
+                        logger.debug(f"[RANKING_DEBUG] blip_caption_score для {image_filename}: {blip_caption_score:.4f}")
                     
                     elif metric_name == "blip2_cap":
                          blip2_caption_score = get_blip2_caption_bertscore(img_pil, row["prompt"])
                          res_dict["blip2_cap"] = blip2_caption_score
-                         logger.debug(f"  BLIP-2 Caption Score: {blip2_caption_score:.4f}")
+                         #logger.debug(f"  BLIP-2 Caption Score: {blip2_caption_score:.4f}")
+                         logger.debug(f"[RANKING_DEBUG] blip2_caption_score для {image_filename}: {blip2_caption_score:.4f}")
 
                     # --- Добавьте elif для новых метрик здесь ---
                     # elif metric_name == "new_metric":
