@@ -47,6 +47,10 @@ from .config import (
     DEVICE_CPU,
 )
 
+# --- ИМПОРТ ДЛЯ ПАЙПЛАЙНА ---
+# Импортируем функцию для получения списка всех метрик
+from .pipeline_config import get_all_metrics
+
 # Импорт утилит для работы с устройствами
 from .device_utils import _to_gpu, _release
 
@@ -220,25 +224,33 @@ def load_models(enabled_metrics_list: Optional[List[str]] = None) -> None:
     global iqa_metric, sig_proc, sig_model, dino_proc, dino_model, flor_proc, flor_model
     global blip2_processor, blip2_model
     global blip_cap_processor, blip_cap_model
-    global blip2_caption_processor, blip2_caption_model
+    # --- ДОБАВИТЬ НОВЫЕ ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
+    global blip2_cap_processor, blip2_cap_model
+    # --------------------------------------------
 
     logger.info("Начинаю загрузку моделей (на CPU)...")
-
-    # Определяем, какие модели нужно загружать
-    models_to_load = set()
+    # --- ОПРЕДЕЛЕНИЕ, КАКИЕ МОДЕЛИ НУЖНО ЗАГРУЖАТЬ ---
+    models_to_load: Set[str] = set()
     if enabled_metrics_list is None:
         # Если список не передан, загружаем все модели
         logger.debug("Список метрик не указан. Загружаю все модели.")
+        # Используем центральную карту METRIC_TO_MODELS
         models_to_load.update(sum(METRIC_TO_MODELS.values(), []))
+    elif not enabled_metrics_list:
+        # Если передан пустой список, ничего не загружаем
+        logger.info("Список метрик пуст. Никакие модели не будут загружены.")
+        return
     else:
-        # Если список передан, загружаем только нужные модели
+        # Если передан список, загружаем модели только для включённых метрик
         logger.debug(f"Загружаю модели только для метрик: {enabled_metrics_list}")
         for metric_name in enabled_metrics_list:
+            # Получаем список моделей для метрики из центральной карты
             required_models = METRIC_TO_MODELS.get(metric_name, [])
             models_to_load.update(required_models)
-            logger.debug(f" Метрика '{metric_name}' требует модели: {required_models}")
-
+            logger.debug(f"  Метрика '{metric_name}' требует модели: {required_models}")
+    
     logger.debug(f"Итоговый список моделей для загрузки: {sorted(models_to_load)}")
+    # ------------------------------------------
 
     # --- Загрузка моделей ---
     try:
@@ -247,6 +259,10 @@ def load_models(enabled_metrics_list: Optional[List[str]] = None) -> None:
             logger.info("Начинаю загрузку модели CLIP-IQA...")
             iqa_metric = CLIPImageQualityAssessment("clip_iqa").to(DEVICE_CPU).eval()
             logger.info("Модель CLIP-IQA загружена.")
+        else:
+            iqa_metric = None
+            logger.info("Модель CLIP-IQA пропущена (не включена).")
+        # --- Конец загрузки CLIP-IQA --
 
         # Загрузка SigLIP-2
         if "sig_proc" in models_to_load and "sig_model" in models_to_load:
@@ -256,7 +272,11 @@ def load_models(enabled_metrics_list: Optional[List[str]] = None) -> None:
                 SIGLIP_MODEL_NAME, torch_dtype=DTYPE, device_map="cpu"
             ).eval()
             logger.info("Модель SigLIP-2 загружена.")
-
+        else:
+            sig_proc, sig_model = None, None
+            logger.info("Модель SigLIP-2 пропущена (не включена).")
+        # --- Конец загрузки SigLIP-2 ---
+        
         # Загрузка DINOv2
         if "dino_proc" in models_to_load and "dino_model" in models_to_load:
             logger.info("Начинаю загрузку модели DINOv2...")
@@ -265,6 +285,10 @@ def load_models(enabled_metrics_list: Optional[List[str]] = None) -> None:
                 DINO_MODEL_NAME, torch_dtype=DTYPE, device_map="cpu"
             ).eval()
             logger.info("Модель DINOv2 загружена.")
+        else:
+            dino_proc, dino_model = None, None
+            logger.info("Модель DINOv2 пропущена (не включена).")
+        # --- Конец загрузки DINOv2 ---
 
         # Загрузка Florence-2
         if "flor_proc" in models_to_load and "flor_model" in models_to_load:
@@ -285,6 +309,8 @@ def load_models(enabled_metrics_list: Optional[List[str]] = None) -> None:
             if flor_model is not None:
                 flor_proc = FlorenceProcessor.from_pretrained(FLORENCE_MODEL_NAME, trust_remote_code=True)
                 logger.info("Процессор Florence-2 загружен.")
+            # --- Конец загрузки Florence-2 ---
+
 
         # Загрузка BLIP-2 ITM
         if "blip2_processor" in models_to_load and "blip2_model" in models_to_load:
@@ -297,6 +323,10 @@ def load_models(enabled_metrics_list: Optional[List[str]] = None) -> None:
                 low_cpu_mem_usage=True, # <-- Добавить
             ).eval()
             logger.info("Модель BLIP-2 (ITM) загружена.")
+        else:
+            blip2_processor, blip2_model = None, None
+            logger.info("Модель BLIP-2 (ITM) пропущена (не включена).")
+        # --- Конец загрузки BLIP-2 ---
 
         # Загрузка BLIP Caption
         if "blip_cap_processor" in models_to_load and "blip_cap_model" in models_to_load:
@@ -308,24 +338,38 @@ def load_models(enabled_metrics_list: Optional[List[str]] = None) -> None:
                 device_map="cpu"
             ).eval()
             logger.info("Модель BLIP Caption загружена.")
+        else:
+            blip_cap_processor, blip_cap_model = None, None
+            logger.info("Модель BLIP Caption пропущена (не включена).")
+        # --- Конец загрузки BLIP Caption ---
 
-        # Загрузка BLIP-2 Caption
-        if "blip2_caption_processor" in models_to_load and "blip2_caption_model" in models_to_load:
+        # --- Загрузка BLIP-2 Caption ---
+        if "blip2_cap_processor" in models_to_load and "blip2_cap_model" in models_to_load:
             logger.info("Начинаю загрузку модели BLIP-2 Caption...")
-            blip2_caption_processor = Blip2Processor.from_pretrained(BLIP2_CAPTION_MODEL_NAME)
-            blip2_caption_model = Blip2ForConditionalGeneration.from_pretrained(
-                BLIP2_CAPTION_MODEL_NAME,
-                torch_dtype=DTYPE,
-                low_cpu_mem_usage=True, # <-- Добавить
-                device_map="cpu"
-            ).eval()
-            logger.info("Модель BLIP-2 Caption загружена.")
+            try:
+                # BLIP-2 Caption будет загружаться на CPU и перемещаться на GPU во время инференса
+                blip2_cap_processor = Blip2Processor.from_pretrained(BLIP2_CAPTION_MODEL_NAME) # <-- Используем BLIP2Processor
+                blip2_cap_model = Blip2ForConditionalGeneration.from_pretrained( # <-- Используем Blip2ForConditionalGeneration
+                    BLIP2_CAPTION_MODEL_NAME, # <-- Имя модели из config.py
+                    torch_dtype=DTYPE,
+                    device_map="cpu"
+                ).eval()
+                logger.info("Модель BLIP-2 Caption загружена.")
+            except Exception as e:
+                logger.error(f"Ошибка при загрузке модели BLIP-2 Caption: {e}", exc_info=True)
+                # Продолжаем работу без BLIP-2 Caption
+                blip2_cap_processor = None
+                blip2_cap_model = None
+                logger.warning("Модель BLIP-2 Caption не будет доступна.")
+        else:
+            blip2_cap_processor, blip2_cap_model = None, None
+            logger.info("Модель BLIP-2 Caption пропущена (не включена).")
+        # --- Конец загрузки BLIP-2 Caption ---
+        logger.info("Загрузка моделей завершена.")
 
     except Exception as e:
-        logger.error(f"Ошибка при загрузке моделей: {e}")
-        sys.exit(1)
-
-    logger.info("Загрузка моделей завершена.")
-
-
+        logger.error(f"Ошибка при загрузке моделей", exc_info=True)
+        # Продолжаем работу без BLIP Caption
+        logger.warning("Загрузка моделей не завершена.")
+    # --- Конец загрузки BLIP Caption ---
 # --- Конец модуля ---
