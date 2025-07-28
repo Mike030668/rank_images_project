@@ -1,0 +1,13 @@
+{
+  "pipeline": {
+    "enabled_metrics": ["sig", "iqa", "blip2"],
+    "default_weights": {
+      "alpha": 0.6,
+      "gamma": 0.2,
+      "epsilon": 0.4
+    }
+  },
+  "processing": {
+    "chunk_size": null
+  }
+}

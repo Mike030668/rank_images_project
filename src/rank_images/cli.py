@@ -10,6 +10,8 @@
 import logging
 import sys
 
+
+
 # --- Настройка логирования ДО любых других импортов ---
 # Отключаем базовую конфигурацию, чтобы установить свою
 logging.getLogger().handlers.clear()
@@ -43,15 +45,19 @@ import pandas as pd
 # Импорт основной логики ранжирования
 from .ranking import rank_folder
 # Импорт загрузчика моделей
-from .models import load_models
+from .models import load_models, METRIC_TO_MODELS # <-- Импортируем карту
 # Импорт конфигурации по умолчанию
 from .config import (
     ALPHA_DEFAULT,
     BETA_DEFAULT,
     GAMMA_DEFAULT,
     DELTA_DEFAULT,
+    EPSILON_DEFAULT,
+    ZETA_DEFAULT,
+    THETA_DEFAULT, # <-- НОВОЕ
 )
-
+# --- ИМПОРТ МОДУЛЯ КОНФИГУРАЦИИ ---
+from .pipeline_config import load_pipeline_config, get_default_weights, get_chunk_size, get_enabled_metrics
 # --- Настройка логгирования для CLI ---
 # Базовая настройка логгера для вывода в консоль
 logging.basicConfig(
@@ -68,15 +74,17 @@ def main() -> None:
     Обрабатывает аргументы командной строки, загружает модели и
     запускает процесс ранжирования.
     """
-    # --- Определение и парсинг аргументов ---
+    # --- АРГУМЕНТЫ ДЛЯ ВЕСОВ ---
+    # Эти аргументы позволяют переопределить веса из JSON-конфига
     parser = argparse.ArgumentParser(
         description=(
             "Ранжирует изображения в заданной директории на основе "
             "текстовых промптов и внутреннего качества, используя "
-            "SigLIP-2, Florence-2, CLIP-IQA и DINOv2."
+            f"{', '.join(METRIC_TO_MODELS.keys())}." # <-- Используем ключи из карты
         ),
-        formatter_class=argparse.RawTextHelpFormatter, # Для корректного отображения \n в help
+        formatter_class=argparse.RawTextHelpFormatter,
     )
+    
     parser.add_argument(
         "img_dir", 
         nargs='?', 
@@ -99,27 +107,59 @@ def main() -> None:
     parser.add_argument(
         "--alpha",
         type=float,
-        default=ALPHA_DEFAULT,
+        default=None,
         help=f"Вес метрики SigLIP (схожесть изображения и текста). По умолчанию {ALPHA_DEFAULT}.",
     )
     parser.add_argument(
         "--beta",
         type=float,
-        default=BETA_DEFAULT,
+        default=None,
         help=f"Вес метрики Florence-2 (поиск объектов по запросу). По умолчанию {BETA_DEFAULT}.",
     )
     parser.add_argument(
         "--gamma",
         type=float,
-        default=GAMMA_DEFAULT,
+        default=None,
         help=f"Вес метрики CLIP-IQA (общее качество изображения). По умолчанию {GAMMA_DEFAULT}.",
     )
     parser.add_argument(
         "--delta",
         type=float,
-        default=DELTA_DEFAULT,
+        default=None,
         help=f"Вес метрики DINOv2 (внутренние признаки изображения). По умолчанию {DELTA_DEFAULT}.",
     )
+
+    parser.add_argument(
+        "--epsilon",
+        type=float,
+        default=None,
+        help=f"Вес метрики BLIP-2 (Image-Text Matching). По умолчанию {EPSILON_DEFAULT}.",
+    )
+
+    parser.add_argument(
+        "--zeta", 
+        type=float,
+        default=None, 
+        help=f"Вес метрики BLIP Caption + BERTScore к prompt. По умолчанию берётся из JSON-конфига или {ZETA_DEFAULT}.",
+    )
+    parser.add_argument(
+        "--theta",
+        type=float,
+        default=THETA_DEFAULT,
+        help=f"Вес метрики BLIP-2 Caption + BERTScore к prompt. По умолчанию {THETA_DEFAULT}.",
+    )
+    #--- НОВЫЙ АРГУМЕНТ ---
+    parser.add_argument(
+        "--pipeline-config",
+        type=str, # <-- Принимаем путь к файлу как строку
+        default=None,
+        help=(
+            "Путь к JSON-файлу конфигурации пайплайна. "
+            "Определяет, какие метрики включены и их веса по умолчанию. "
+            "Если не указан, используется стандартная конфигурация."
+        ),
+    )
+    # ----------------------
     parser.add_argument(
         "--chunk",
         type=int,
@@ -138,6 +178,28 @@ def main() -> None:
 
     # --- Парсинг аргументов ---
     args = parser.parse_args()
+
+    # --- Загрузка и валидация JSON-конфигурации пайплайна ---
+    pipeline_config = load_pipeline_config(args.pipeline_config)
+    # Извлекаем веса по умолчанию из конфига
+    default_weights_from_config = get_default_weights(pipeline_config)
+    # Извлекаем chunk_size из конфига
+    chunk_size_from_config = get_chunk_size(pipeline_config)
+    # ------------------------------
+
+    # --- Определение финальных значений весов ---
+    # Если вес НЕ задан через CLI (--alpha None), используем значение из JSON-конфига или дефолтное
+    final_alpha = args.alpha if args.alpha is not None else default_weights_from_config.get("alpha", ALPHA_DEFAULT)
+    final_beta = args.beta if args.beta is not None else default_weights_from_config.get("beta", BETA_DEFAULT)
+    final_gamma = args.gamma if args.gamma is not None else default_weights_from_config.get("gamma", GAMMA_DEFAULT)
+    final_delta = args.delta if args.delta is not None else default_weights_from_config.get("delta", DELTA_DEFAULT)
+    final_epsilon = args.epsilon if args.epsilon is not None else default_weights_from_config.get("epsilon", EPSILON_DEFAULT)
+    final_zeta = args.zeta if args.zeta is not None else default_weights_from_config.get("zeta", ZETA_DEFAULT) # <-- НОВОЕ
+    final_theta = args.zeta if args.theta is not None else default_weights_from_config.get("theta", THETA_DEFAULT) # <-- НОВОЕ
+    # --- Определение финального chunk_size ---
+    # Приоритет: CLI > JSON-config > config.py
+    final_chunk_size = args.chunk if args.chunk is not None else chunk_size_from_config
+    # ------------------------------------------
 
     # --- Логика обработки аргументов ---
     # Если указан --demo, переопределяем img_dir и prompts
@@ -172,7 +234,12 @@ def main() -> None:
     # --- Загрузка моделей ---
     logger.info("Загружаю модели (на CPU)...")
     try:
-        load_models()
+        # Извлекаем список включённых метрик из конфига
+        pipeline_config = load_pipeline_config(args.pipeline_config)
+        enabled_metrics_list = get_enabled_metrics(pipeline_config)
+        
+        # Передаём список в load_models для оптимизированной загрузки
+        load_models(enabled_metrics_list) # <-- Передаём список
         logger.info("Все модели успешно загружены.")
     except Exception as e:
         logger.error(f"Ошибка при загрузке моделей: {e}")
@@ -184,12 +251,21 @@ def main() -> None:
         result_df: pd.DataFrame = rank_folder(
             img_dir=args.img_dir,
             prompts_in=args.prompts,
-            alpha=args.alpha,
-            beta=args.beta,
-            gamma=args.gamma,
-            delta=args.delta,
-            chunk_size=args.chunk,
+            # --- ПЕРЕДАЁМ ФИНАЛЬНЫЕ ЗНАЧЕНИЯ ---
+            alpha=final_alpha,
+            beta=final_beta,
+            gamma=final_gamma,
+            delta=final_delta,
+            epsilon=final_epsilon,
+            zeta=final_zeta, 
+            theta=final_theta, 
+            # ----------------------------------
+            chunk_size=final_chunk_size, # <-- Обновлённый chunk_size
+            # --- ПЕРЕДАЁМ КОНФИГУРАЦИЮ ПАЙПЛАЙНА ---
+            pipeline_config=pipeline_config, 
+            # --------------------------------------
         )
+
         logger.info("Процесс ранжирования завершён успешно.")
         # Выводим первые несколько строк результата в консоль
         print("\n--- Результаты ранжирования (первые 5 строк) ---")

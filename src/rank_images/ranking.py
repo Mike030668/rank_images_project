@@ -18,8 +18,7 @@
 """
 import logging
 from pathlib import Path
-from typing import List, Optional, Union
-
+from typing import List, Optional, Union, Dict, Any
 import numpy as np
 import pandas as pd
 from PIL import Image
@@ -27,18 +26,37 @@ from tqdm.auto import tqdm
 
 # Импорт вспомогательных функций и компонентов
 from .data_processing import build_dataframe, _chunks, _z
+# Импорт метрик
 from .metrics import (
     get_siglip_score,
     get_florence_score,
     get_iqa,
     get_dino,
+    get_blip2_match_score,
+    # --- НОВАЯ МЕТРИКА ---
+    get_blip_caption_bertscore,
+    get_blip2_caption_bertscore, # <-- НОВОЕ
+    # --------------------
 )
+# --- ИМПОРТ УТИЛИТ ДЛЯ ПАЙПЛАЙНА ---
+from .utils import normalize_metrics
+from .pipeline_config import get_enabled_metrics, get_all_metrics
+# -----------------------------------
 # Импорт конфигурации
-from .config import ALPHA_DEFAULT, BETA_DEFAULT, GAMMA_DEFAULT, DELTA_DEFAULT, MAX_SIG_TOK
+from .config import (
+    ALPHA_DEFAULT,
+    BETA_DEFAULT,
+    GAMMA_DEFAULT,
+    DELTA_DEFAULT,
+    EPSILON_DEFAULT,
+    # --- НОВАЯ МЕТРИКА ---
+    ZETA_DEFAULT,
+    THETA_DEFAULT, # <-- НОВОЕ
+    # --------------------
+    ALL_METRICS
+)
 
-# Настройка логгирования
 logger = logging.getLogger(__name__)
-
 
 def rank_folder(
     img_dir: Path,
@@ -47,16 +65,25 @@ def rank_folder(
     beta: float = BETA_DEFAULT,
     gamma: float = GAMMA_DEFAULT,
     delta: float = DELTA_DEFAULT,
-    chunk_size: Optional[int] = None,  # Может быть None
+    epsilon: float = EPSILON_DEFAULT,
+    # --- НОВАЯ МЕТРИКА ---
+    zeta: float = ZETA_DEFAULT,
+    theta: float = THETA_DEFAULT, # <-- НОВОЕ
+    # --------------------
+    chunk_size: Optional[int] = None,
+    # --- ПАЙПЛАЙН ---
+    pipeline_config: Optional[Dict[str, Any]] = None,
+    # ----------------
 ) -> pd.DataFrame:
     """
     Ранжирует изображения в заданной директории на основе текстовых промптов
-    и внутреннего качества.
+    и внутреннего качества, используя SigLIP-2, Florence-2, CLIP-IQA, DINOv2,
+    BLIP-2 и BLIP Caption + BERTScore.
 
     Алгоритм:
     1. Строит DataFrame с изображениями и промптами.
     2. Для каждого изображения:
-       a. Вычисляет метрики SigLIP, Florence, IQA, DINO.
+       a. Вычисляет метрики SigLIP, Florence, IQA, DINO, BLIP-2, BLIP Caption.
        b. Нормализует значения метрик по Z-оценке.
        c. Вычисляет итоговый балл как взвешенную сумму нормализованных метрик.
     3. Сортирует изображения по убыванию итогового балла.
@@ -64,10 +91,10 @@ def rank_folder(
 
     Args:
         img_dir (Path): Путь к директории с изображениями для ранжирования.
-        prompts_in (str | dict | pd.DataFrame | None): Источник промптов.
+        prompts_in (str | dict | pd.DataFrame | None): Источник текстовых промптов.
             - None: Используются только имена файлов.
-            - str (путь к .json): JSON-файл с промптами.
-            - dict: Словарь с промптами.
+            - str (путь к .json): JSON-файл с ключами 'prompt', 'prompt2', 'negative', 'negative2'.
+            - dict: Словарь с ключами 'prompt', 'prompt2', 'negative', 'negative2'.
             - str (произвольный текст): Используется как 'prompt'.
             - pd.DataFrame: Готовый DataFrame с промптами.
         alpha (float): Вес метрики SigLIP (схожесть изображения и текста).
@@ -78,9 +105,21 @@ def rank_folder(
                        По умолчанию 0.2.
         delta (float): Вес метрики DINOv2 (внутренние признаки изображения).
                        По умолчанию 0.1.
-        chunk_size (int | None): Максимальное количество токенов в одном
-                                 фрагменте текста для SigLIP. Если None,
-                                 используется значение по умолчанию из config.
+        epsilon (float): Вес метрики BLIP-2 (Image-Text Matching).
+                         По умолчанию 0.3.
+        # --- НОВАЯ МЕТРИКА ---
+        zeta (float): Вес метрики BLIP Caption + BERTScore к prompt.
+                      По умолчанию 0.25.
+        # --------------------
+        chunk_size (int | None): Максимальное количество токенов в одном фрагменте
+                                 текста для SigLIP.
+                                 Используется для разбиения длинных текстов. По
+                                 умолчанию используется значение из config.py.
+        # --- ПАЙПЛАЙН ---
+        pipeline_config (dict | None): Конфигурация пайплайна, определяющая
+                                       включённые метрики и их веса по умолчанию.
+                                       Если None, используются аргументы CLI.
+        # ----------------
 
     Returns:
         pd.DataFrame: DataFrame с результатами ранжирования, отсортированный
@@ -93,62 +132,21 @@ def rank_folder(
         Exception: При ошибках в процессе вычисления метрик.
     """
     logger.info(f"Начинаю ранжирование изображений в папке: {img_dir}")
+    
+    # --- ИЗВЛЕЧЕНИЕ КОНФИГУРАЦИИ ПАЙПЛАЙНА ---
+    enabled_metrics_list = get_enabled_metrics(pipeline_config) if pipeline_config else []
+    logger.info(f"Включённые метрики: {enabled_metrics_list}")
+    # Получаем список ВСЕХ доступных метрик из конфига
+    all_metrics_list = get_all_metrics(pipeline_config) if pipeline_config else []
+    logger.debug(f"Все доступные метрики: {all_metrics_list}")
+    # ------------------------------------------
 
     # --- 1. Подготовка данных ---
-    # Создаем DataFrame с информацией об изображениях и промптах
     df_prompts = build_dataframe(img_dir, prompts_in)
-    
-    # Убеждаемся, что все необходимые колонки присутствуют
-    required_columns = ["prompt", "prompt2", "negative", "negative2"]
-    for col in required_columns:
-        if col not in df_prompts.columns:
-            df_prompts[col] = "" # Заполняем пустыми строками, если отсутствуют
-
     results = [] # Список для хранения результатов по каждому изображению
     logger.info("Начинаю вычисление метрик для изображений...")
 
-    # --- ЛОКАЛЬНОЕ определение _chunks для ранжирования ---
-    # Воссоздаёт логику оригинального скрипта для обработки chunk_size=None
-    def _chunks(text: str, max_tok: Optional[int]) -> List[str]:
-        """
-        Локальная функция разбиения текста на фрагменты.
-        
-        Если max_tok равно None, используется фиксированное значение MAX_SIG_TOK.
-        Это необходимо для корректной работы SigLIP-2, которая имеет ограничение
-        на длину входного текста.
-        """
-        # ВАЖНО: Обработка None для SigLIP (воспроизведение оригинальной логики)
-        if max_tok is None:
-            max_tok = MAX_SIG_TOK # <-- Подставляем MAX_SIG_TOK если None
-        # Обработка <= 0
-        if max_tok <= 0:
-            return [text]
-        # Разбиение на фрагменты
-        words = text.split()
-        return [" ".join(words[i : i + max_tok]) for i in range(0, len(words), max_tok)]
-    # --- Конец локального определения _chunks ---
-
-    # --- Подготовка текстовых запросов ---
-    # Функция для создания списка непустых фрагментов текста
-    # Использует ЛОКАЛЬНУЮ _chunks
-    def _make_chunks(*texts: str) -> List[str]:
-        # --- Отладочные принты внутри _make_chunks ---
-        #print(f"[DEBUG][_make_chunks] type(_chunks): {type(_chunks)}")
-        #print(f"[DEBUG][_make_chunks] _chunks is None: {_chunks is None}")
-        if _chunks is None:
-            raise RuntimeError("Локальная переменная _chunks равна None внутри _make_chunks!")
-        # --- Конец отладочных принтов ---
-        
-        output_chunks = []
-        for text in texts:
-            # Разбиваем каждый текст на фрагменты и добавляем непустые
-            output_chunks.extend(_chunks(text, chunk_size))
-        # Возвращаем список уникальных непустых фрагментов
-        return [chunk for chunk in output_chunks if chunk.strip()]
-
-
     # --- 2. Цикл по изображениям ---
-    # Используем tqdm для отображения прогресса
     for row in tqdm(df_prompts.to_dict("records"), desc="Обработка изображений"):
         image_filename = row["image"]
         image_path = img_dir / image_filename
@@ -159,103 +157,127 @@ def rank_folder(
             continue
 
         try:
-            #print(f"[DEBUG] type(_chunks): {type(_chunks)}")
-            #print(f"[DEBUG] _chunks is None: {_chunks is None}")
-            #print(f"[DEBUG] [1] Открываем изображение: {image_path}")
             # Открываем изображение
             img_pil = Image.open(image_path).convert("RGB")
         except Exception as e:
             logger.error(f"Ошибка при открытии изображения {image_path}: {e}")
             continue
 
+        # --- Подготовка текстовых запросов ---
+        # Функция для создания списка непустых фрагментов текста
+        def _make_chunks(*texts: str) -> List[str]:
+            output_chunks = []
+            for text in texts:
+                # Разбиваем каждый текст на фрагменты и добавляем непустые
+                output_chunks.extend(_chunks(text, chunk_size))
+            # Возвращаем список уникальных непустых фрагментов
+            return [chunk for chunk in output_chunks if chunk.strip()]
 
+        
         try:
             # Подготавливаем позитивные и негативные фрагменты для SigLIP
-            # Если chunk_size=None, _make_chunks -> _chunks -> подставит MAX_SIG_TOK для SigLIP
-            #print(f"[DEBUG] [2] Подготавливаем чанки SigLIP...")
             positive_chunks_siglip = _make_chunks(row["prompt"], row["prompt2"])
-            #print(f"[DEBUG] [2.OK] positive_chunks_siglip: {positive_chunks_siglip}")
             negative_chunks_siglip = _make_chunks(row["negative"], row["negative2"])
-            #print(f"[DEBUG] [2.OK] negative_chunks_siglip: {negative_chunks_siglip}")
+
             # --- Вычисление метрик ---
-            #print(f"[DEBUG] [3] Начинаем SigLIP...")
-            # --- SigLIP Score ---
-            siglip_pos_score = get_siglip_score(img_pil, positive_chunks_siglip)
-            #print(f"[DEBUG] [3.OK] siglip_pos_score: {siglip_pos_score}")
-            siglip_neg_score = get_siglip_score(img_pil, negative_chunks_siglip)
-            #print(f"[DEBUG] [3.OK] siglip_neg_score: {siglip_neg_score}")
-            siglip_score = siglip_pos_score - siglip_neg_score
-            #print(f"[DEBUG] [3.OK] siglip_score: {siglip_score}")
+            # --- Создаём пустой словарь для результатов текущего изображения ---
+            res_dict = {"image": image_filename}
+            
+            # --- Итерируемся по ВКЛЮЧЕННЫМ метрикам ---
+            for metric_name in enabled_metrics_list:
+                try:
+                    if metric_name == "sig":
+                        siglip_pos_score = get_siglip_score(img_pil, positive_chunks_siglip)
+                        siglip_neg_score = get_siglip_score(img_pil, negative_chunks_siglip)
+                        siglip_score = siglip_pos_score - siglip_neg_score
+                        res_dict["sig"] = siglip_score
+                        logger.debug(f"  SigLIP Score: {siglip_score:.4f}")
 
-            #print(f"[DEBUG] [4] Начинаем Florence...")
-            # --- Florence Score ---
-            # Объединяем позитивные/негативные промпты в одну строку для Florence
-            florence_positive_text = ", ".join(filter(None, [row["prompt"], row["prompt2"]]))
-            florence_negative_text = ", ".join(filter(None, [row["negative"], row["negative2"]]))
+                    elif metric_name == "flor":
+                        florence_positive_text = ", ".join(filter(None, [row["prompt"], row["prompt2"]]))
+                        florence_negative_text = ", ".join(filter(None, [row["negative"], row["negative2"]]))
+                        
+                        florence_pos_chunks = _make_chunks(florence_positive_text)
+                        florence_neg_chunks = _make_chunks(florence_negative_text)
 
-            # Разбиваем объединённые тексты на фрагменты (используя chunk_size, которое может быть None)
-            # Если chunk_size=None, Florence получит фрагмент [full_text] (так как _chunks(None) -> [full_text] после подстановки MAX_SIG_TOK и проверки длины)
-            florence_pos_chunks = _make_chunks(florence_positive_text)
-            #print(f"[DEBUG] [4.OK] florence_pos_chunks: {florence_pos_chunks}")
-            florence_neg_chunks = _make_chunks(florence_negative_text)
-            #print(f"[DEBUG] [4.OK] florence_neg_chunks: {florence_neg_chunks}")
-            # Вычисляем средний Florence-скор для позитивных фрагментов
-            florence_pos_scores = [
-                get_florence_score(img_pil, chunk) for chunk in florence_pos_chunks
-            ]
-            #print(f"[DEBUG] [4.OK] florence_pos_scores: {florence_pos_scores}")
-            avg_florence_pos_score = (
-                sum(florence_pos_scores) / len(florence_pos_scores)
-                if florence_pos_scores else 0.0
-            )
+                        florence_pos_scores = [
+                            get_florence_score(img_pil, chunk) for chunk in florence_pos_chunks
+                        ]
+                        avg_florence_pos_score = (
+                            sum(florence_pos_scores) / len(florence_pos_scores)
+                            if florence_pos_scores else 0.0
+                        )
 
-            # Вычисляем средний Florence-скор для негативных фрагментов
-            florence_neg_scores = [
-                get_florence_score(img_pil, chunk) for chunk in florence_neg_chunks
-            ]
-            avg_florence_neg_score = (
-                sum(florence_neg_scores) / len(florence_neg_scores)
-                if florence_neg_scores else 0.0
-            )
-            #print(f"[DEBUG] [4.OK] florence_neg_scores: {florence_neg_scores}")
-            florence_score = avg_florence_pos_score - avg_florence_neg_score
-            #print(f"[DEBUG] [4.OK] florence_score: {florence_score}")
+                        florence_neg_scores = [
+                            get_florence_score(img_pil, chunk) for chunk in florence_neg_chunks
+                        ]
+                        avg_florence_neg_score = (
+                            sum(florence_neg_scores) / len(florence_neg_scores)
+                            if florence_neg_scores else 0.0
+                        )
 
-            #print(f"[DEBUG] [5] Начинаем IQA...")
-            # --- IQA Score ---
-            iqa_score = get_iqa(img_pil)
-            #print(f"[DEBUG] [5.OK] iqa_score: {iqa_score}")
+                        florence_score = avg_florence_pos_score - avg_florence_neg_score
+                        res_dict["flor"] = florence_score
+                        logger.debug(f"  Florence Score: {florence_score:.4f}")
 
-            #print(f"[DEBUG] [6] Начинаем DINO...")
-            # --- DINO Score ---
-            dino_score = get_dino(img_pil)
-            #print(f"[DEBUG] [6.OK] dino_score: {dino_score}")
+                    elif metric_name == "iqa":
+                        iqa_score = get_iqa(img_pil)
+                        res_dict["iqa"] = iqa_score
+                        logger.debug(f"  IQA Score: {iqa_score:.4f}")
+                    
+
+                    elif metric_name == "dino":
+                        dino_score = get_dino(img_pil)
+                        res_dict["dino"] = dino_score
+                        logger.debug(f"  DINO Score: {dino_score:.4f}")
+
+                    elif metric_name == "blip2":
+                        blip2_pos_score = get_blip2_match_score(img_pil, positive_chunks_siglip)
+                        blip2_neg_score = get_blip2_match_score(img_pil, negative_chunks_siglip)
+                        blip2_score = blip2_pos_score - blip2_neg_score
+                        res_dict["blip2"] = blip2_score
+                        logger.debug(f"  BLIP-2 Score: {blip2_score:.4f}")
+
+                    elif metric_name == "blip_cap":
+                        blip_caption_score = get_blip_caption_bertscore(img_pil, row["prompt"])
+                        res_dict["blip_cap"] = blip_caption_score
+                        #logger.debug(f"  BLIP Caption Score: {blip_caption_score:.4f}")
+                        logger.debug(f"[RANKING_DEBUG] blip_caption_score для {image_filename}: {blip_caption_score:.4f}")
+                    
+                    elif metric_name == "blip2_cap":
+                         blip2_caption_score = get_blip2_caption_bertscore(img_pil, row["prompt"])
+                         res_dict["blip2_cap"] = blip2_caption_score
+                         #logger.debug(f"  BLIP-2 Caption Score: {blip2_caption_score:.4f}")
+                         logger.debug(f"[RANKING_DEBUG] blip2_caption_score для {image_filename}: {blip2_caption_score:.4f}")
+
+                    # --- Добавьте elif для новых метрик здесь ---
+                    # elif metric_name == "new_metric":
+                    #     new_metric_score = get_new_metric_score(...)
+                    #     res_dict["new_metric_abbr"] = new_metric_score
+                    #     logger.debug(f"  New Metric Score: {new_metric_score:.4f}")
+                    # ---------------------------------------------
+
+                    else:
+                        logger.warning(f"Неизвестная метрика '{metric_name}' в списке включённых. Пропускаю.")
+
+                except Exception as metric_e:
+                    logger.error(f"Ошибка при вычислении метрики '{metric_name}' для изображения {image_path}: {metric_e}")
+                    # Можно либо пропустить метрику, либо записать 0.0
+                    res_dict[metric_name] = 0.0 # Записываем 0.0 в случае ошибки
+            
+            # --- Конец итерации по включённым метрикам ---
 
             # --- Сохранение результатов для изображения ---
-            results.append(
-                {
-                    "image": image_filename,
-                    "sig": siglip_score,
-                    "flor": florence_score,
-                    "iqa": iqa_score,
-                    "dino": dino_score,
-                }
-            )
+            results.append(res_dict)
             logger.debug(
                 f"Изображение '{image_filename}': "
-                f"SigLIP={siglip_score:.4f}, Florence={florence_score:.4f}, "
-                f"IQA={iqa_score:.4f}, DINO={dino_score:.4f}"
+                f"{', '.join([f'{k}={v:.4f}' for k, v in res_dict.items() if k != 'image'])}"
             )
-            #print(f"[DEBUG] [7] Успешно обработано: {image_filename}")
 
         except Exception as e:
             logger.error(
                 f"Ошибка при вычислении метрик для изображения {image_path}: {e}"
             )
-            import traceback
-            traceback.print_exc() # Добавляем traceback для полной информации
-            # Можно либо пропустить изображение, либо остановить процесс.
-            # Здесь мы пропускаем и продолжаем.
             continue
 
     # --- 3. Проверка результатов ---
@@ -269,41 +291,71 @@ def rank_folder(
     # --- 4. Нормализация метрик и вычисление итогового балла ---
     logger.info("Нормализую метрики и вычисляю итоговый балл...")
     
-    # Преобразуем список результатов в массивы NumPy для удобства
-    sig_scores = np.array([r["sig"] for r in results])
-    flor_scores = np.array([r["flor"] for r in results])
-    iqa_scores = np.array([r["iqa"] for r in results])
-    dino_scores = np.array([r["dino"] for r in results])
+    # --- ЦЕНТРАЛИЗОВАННАЯ НОРМАЛИЗАЦИЯ ---
+    # Определяем список метрик для нормализации на основе ВКЛЮЧЕННЫХ
+    # Это пересечение всех доступных и включённых метрик
+    metrics_to_normalize = [m for m in all_metrics_list if m in enabled_metrics_list]
+    logger.debug(f"Метрики для нормализации: {metrics_to_normalize}")
+    
+    # Вызываем универсальную функцию нормализации
+    normalized_data: Dict[str, np.ndarray] = normalize_metrics(results, metrics_to_normalize)
 
-    # Нормализуем каждую метрику по Z-оценке
-    sig_z = _z(sig_scores)
-    flor_z = _z(flor_scores)
-    iqa_z = _z(iqa_scores)
-    dino_z = _z(dino_scores)
+    # Обновляем словари в `results` нормализованными значениями
+    for metric_norm_name, norm_values in normalized_data.items():
+        # metric_norm_name будет, например, "sig_norm"
+        for i, res_dict in enumerate(results):
+            res_dict[metric_norm_name] = norm_values[i]
+    # --- Конец централизованной нормализации ---
 
-    # Обновляем результаты нормализованными значениями
+    # --- Вычисление итогового балла ---
+    # --- ИСПОЛЬЗУЕМ УЖЕ ПЕРЕДАННЫЕ ФИНАЛЬНЫЕ ВЕСА ---
+    # alpha, beta, gamma, delta, epsilon, zeta, theta уже содержат
+    # значения, определённые по приоритету: CLI > JSON-Config > config.py defaults
+    # ----------------------------------------------
+
     for i, res_dict in enumerate(results):
-        res_dict.update(
-            {
-                "sig": sig_z[i],
-                "flor": flor_z[i],
-                "iqa": iqa_z[i],
-                "dino": dino_z[i],
-            }
-        )
-        # Вычисляем итоговый балл как взвешенную сумму
-        total_score = (
-            alpha * res_dict["sig"]
-            + beta * res_dict["flor"]
-            + gamma * res_dict["iqa"]
-            + delta * res_dict["dino"]
-        )
-        # Нормализуем по сумме весов для получения значения в привычном диапазоне
-        total_weight = alpha + beta + gamma + delta
+        # Вычисляем итоговый балл как взвешенную сумму НОРМАЛИЗОВАННЫХ метрик
+        # Учитываем только ВКЛЮЧЕННЫЕ метрики
+        total_score = 0.0
+        total_weight = 0.0
+        
+        # --- Используем переданные аргументы напрямую ---
+        if "sig" in enabled_metrics_list:
+            total_score += alpha * res_dict.get("sig_norm", 0.0)
+            total_weight += alpha
+        if "flor" in enabled_metrics_list:
+            total_score += beta * res_dict.get("flor_norm", 0.0)
+            total_weight += beta
+        if "iqa" in enabled_metrics_list:
+            total_score += gamma * res_dict.get("iqa_norm", 0.0)
+            total_weight += gamma
+        if "dino" in enabled_metrics_list:
+            total_score += delta * res_dict.get("dino_norm", 0.0)
+            total_weight += delta
+        if "blip2" in enabled_metrics_list:
+            total_score += epsilon * res_dict.get("blip2_norm", 0.0)
+            total_weight += epsilon
+        if "blip_cap" in enabled_metrics_list:
+            total_score += zeta * res_dict.get("blip_cap_norm", 0.0)
+            total_weight += zeta
+        # --- НОВАЯ МЕТРИКА ---
+        if "blip2_cap" in enabled_metrics_list:
+            total_score += theta * res_dict.get("blip2_cap_norm", 0.0)
+            total_weight += theta
+        # --------------------
+        # --- Шаблон для добавления новой метрики ---
+        # if "new_metric" in enabled_metrics_list:
+        #     total_score += new_metric_weight_arg * res_dict.get("new_metric_norm", 0.0)
+        #     total_weight += new_metric_weight_arg
+        # --------------------------------------------
+        
+        # Нормализуем по сумме используемых весов
         if total_weight > 0:
             res_dict["total"] = total_score / total_weight
         else:
-            res_dict["total"] = 0.0 # Избегаем деления на 0, если все веса 0
+            res_dict["total"] = 0.0
+            
+    # --- Конец нормализации и вычисления итогового балла ---
 
     # --- 5. Сортировка и сохранение ---
     # Создаем DataFrame из результатов
@@ -326,7 +378,7 @@ def rank_folder(
 # --- Шаблон для расширения ---
 # При добавлении новой метрики `get_new_metric_score`:
 # 1. Добавьте её импорт вверху файла.
-# 2. Добавьте новый аргумент веса (например, `epsilon: float = EPSILON_DEFAULT`)
+# 2. Добавьте новый аргумент веса (например, `zeta: float = ZETA_DEFAULT`)
 #    в сигнатуру функции `rank_folder`.
 # 3. В цикле обработки изображений:
 #    a. Вызовите `new_metric_score = get_new_metric_score(img_pil, ...)`.
@@ -336,5 +388,6 @@ def rank_folder(
 #    b. Нормализуйте с помощью `_z(...)`.
 #    c. Обновите словари в `results` нормализованным значением.
 #    d. Добавьте нормализованное значение в вычисление `total_score`,
-#       используя новый вес `epsilon`.
+#       используя новый вес `zeta`.
 # 5. Не забудьте обновить документацию функции `rank_folder`.
+# --- Конец шаблона ---
