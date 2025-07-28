@@ -17,16 +17,19 @@ from .config import ( # Импортируем значения по умолч�
     GAMMA_DEFAULT,
     DELTA_DEFAULT,
     EPSILON_DEFAULT,
-    ZETA_DEFAULT, # Заглушка для BLIP Caption
+    ZETA_DEFAULT, 
+    THETA_DEFAULT,
+    ALL_METRICS,
     # Другие константы по необходимости
 )
+from .models import METRIC_TO_MODELS # <-- Импорт для документации/проверки
 
 logger = logging.getLogger(__name__)
 
 # --- Стандартная конфигурация (если файл не указан или повреждён) ---
 DEFAULT_PIPELINE_CONFIG: Dict[str, Any] = {
     "pipeline": {
-        "enabled_metrics": ["sig", "flor", "iqa", "dino", "blip2", "blip_cap"],
+        "enabled_metrics": ALL_METRICS,
         "default_weights": {
             "alpha": ALPHA_DEFAULT,
             "beta": BETA_DEFAULT,
@@ -34,6 +37,8 @@ DEFAULT_PIPELINE_CONFIG: Dict[str, Any] = {
             "delta": DELTA_DEFAULT,
             "epsilon": EPSILON_DEFAULT,
             "zeta": ZETA_DEFAULT,
+                        # --- НОВОЕ ---
+            "theta": THETA_DEFAULT, # <-- НОВОЕ: вес для blip2_cap
         }
     },
     "processing": {
@@ -70,6 +75,16 @@ def load_pipeline_config(config_path: Optional[Union[str, Path]]) -> Dict[str, A
     try:
         with open(config_file, 'r', encoding='utf-8') as f:
             user_config = json.load(f)
+
+         
+        # --- ВРЕМЕННЫЙ ОТЛАДОЧНЫЙ ПРИНТ ---
+        print(f"[DEBUG_PIPELINE_CONFIG] Загруженный config: {user_config}")
+        print(f"[DEBUG_PIPELINE_CONFIG] type(config): {type(user_config)}")
+        print(f"[DEBUG_PIPELINE_CONFIG] config.get('pipeline'): {user_config.get('pipeline')}")
+        print(f"[DEBUG_PIPELINE_CONFIG] type(config.get('pipeline')): {type(user_config.get('pipeline'))}")
+        print(f"[DEBUG_PIPELINE_CONFIG] config.get('pipeline', {{}}).get('enabled_metrics'): {user_config.get('pipeline', {}).get('enabled_metrics')}")
+        print(f"[DEBUG_PIPELINE_CONFIG] type(config.get('pipeline', {{}}).get('enabled_metrics')): {type(user_config.get('pipeline', {}).get('enabled_metrics'))}")
+        # ----------------------------------           
         
         # --- Базовая валидация ---
         if not isinstance(user_config, dict):
@@ -112,24 +127,87 @@ def load_pipeline_config(config_path: Optional[Union[str, Path]]) -> Dict[str, A
         logger.info("Конфигурация пайплайна успешно загружена и проверена.")
         return user_config
 
+    # --- Обработка ошибок ---
     except json.JSONDecodeError as e:
-        logger.error(f"Ошибка декодирования JSON в файле '{config_file}': {e}")
+        # logger.error(f"Ошибка декодирования JSON в файле '{config_file}': {e}") # <-- Старая строка
+        # --- ОБНОВЛЕНО ---
+        logger.error(f"Ошибка декодирования JSON в файле '{config_file}': {e}", exc_info=True) # <-- НОВАЯ строка
+        # ---------------
         logger.info("Использую стандартную конфигурацию.")
         return DEFAULT_PIPELINE_CONFIG.copy()
     except Exception as e:
-        logger.error(f"Неожиданная ошибка при загрузке конфигурации из '{config_file}': {e}")
+        # logger.error(f"Неожиданная ошибка при загрузке конфигурации из '{config_file}': {e}") # <-- Старая строка
+        # --- ОБНОВЛЕНО ---
+        logger.error(f"Неожиданная ошибка при загрузке конфигурации из '{config_file}': {e}", exc_info=True) # <-- НОВАЯ строка
+        # ---------------
         logger.info("Использую стандартную конфигурацию.")
         return DEFAULT_PIPELINE_CONFIG.copy()
+    # --- Конец обработки ошибок ---
 
 # --- Вспомогательные функции для удобства доступа ---
-def get_enabled_metrics(config: Dict[str, Any]) -> List[str]:
-    """Извлекает список включённых метрик из конфигурации."""
-    return config.get("pipeline", {}).get("enabled_metrics", [])
+# src/rank_images/pipeline_config.py
+# --- Вспомогательные функции ---
+def get_all_metrics(config: Dict[str, Any]) -> List[str]:
+    """Извлекает список ВСЕХ доступных метрик из конфигурации."""
+    # Возвращаем центральный список из config.py
+    # Это гарантирует, что список всегда актуален
+    # return ALL_METRICS.copy() # Возвращаем копию, чтобы избежать мутаций
+    # --- ОБНОВЛЕНО ---
+    # Используем METRIC_TO_MODELS из models.py для получения списка
+    from .models import METRIC_TO_MODELS
+    return list(METRIC_TO_MODELS.keys())
+    # ---------------
+# --- Конец вспомогательных функций ---
 
+def get_enabled_metrics(config: Dict[str, Any]) -> List[str]:
+    """
+    Извлекает список включённых метрик из конфигурации пайплайна.
+
+    Args:
+        config (dict): Конфигурация пайплайна, загруженная load_pipeline_config().
+
+    Returns:
+        List[str]: Список имён включённых метрик. Если конфигурация
+                   повреждена или метрики не указаны, возвращается
+                   стандартный список из DEFAULT_PIPELINE_CONFIG.
+    """
+    try:
+        # Извлекаем список из конфига
+        # config["pipeline"]["enabled_metrics"]
+        enabled_metrics_from_config = config.get("pipeline", {}).get("enabled_metrics", [])
+        
+        # Проверяем, что это список
+        if not isinstance(enabled_metrics_from_config, list):
+            logger.warning(
+                f"'enabled_metrics' в конфиге должен быть списком. "
+                f"Получен тип: {type(enabled_metrics_from_config)}. "
+                f"Использую стандартный список."
+            )
+            # Возвращаем стандартный список из DEFAULT_PIPELINE_CONFIG
+            return DEFAULT_PIPELINE_CONFIG["pipeline"]["enabled_metrics"]
+        
+        # Проверяем, что все элементы - строки
+        valid_metrics = [m for m in enabled_metrics_from_config if isinstance(m, str)]
+        if len(valid_metrics) != len(enabled_metrics_from_config):
+            logger.warning(
+                f"Некоторые элементы в 'enabled_metrics' не являются строками. "
+                f"Игнорирую их. Валидные: {valid_metrics}"
+            )
+            
+        logger.debug(f"Извлечённые включённые метрики: {valid_metrics}")
+        return valid_metrics
+
+    except Exception as e:
+        logger.error(f"Ошибка при извлечении 'enabled_metrics' из конфига: {e}", exc_info=True)
+        # Возвращаем стандартный список
+        return DEFAULT_PIPELINE_CONFIG["pipeline"]["enabled_metrics"]
+
+# src/rank_images/pipeline_config.py
 def get_default_weights(config: Dict[str, Any]) -> Dict[str, float]:
     """Извлекает словарь весов по умолчанию из конфигурации."""
     return config.get("pipeline", {}).get("default_weights", {})
 
+# src/rank_images/pipeline_config.py
 def get_chunk_size(config: Dict[str, Any]) -> Optional[int]:
     """Извлекает размер чанка из конфигурации."""
     return config.get("processing", {}).get("chunk_size", None)

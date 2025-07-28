@@ -295,7 +295,7 @@ def get_dino(img: Image.Image) -> float:
     return l2_norm
 
 
-# --- НОВАЯ МЕТРИКА: BLIP-2 Matching Score ---
+# --- НОВАЯ МЕТРИКА: BLIP-2 Matching Score ---# --- НОВАЯ МЕТРИКА: BLIP-2 Matching Score ---
 @torch.inference_mode()
 def get_blip2_match_score(img: Image.Image, prompts: List[str]) -> float:
     """
@@ -312,8 +312,8 @@ def get_blip2_match_score(img: Image.Image, prompts: List[str]) -> float:
         float: Средняя вероятность соответствия. Если список `prompts` пуст
                или модель BLIP-2 не загружена, возвращает 0.0.
     """
-    # Используем models.blip2_model и models.blip2_processor
-    if models.blip2_processor is None or models.blip2_model is None: 
+    # Проверка, загружена ли модель
+    if models.blip2_processor is None or models.blip2_model is None:
         logger.warning(
             "Модель или процессор BLIP-2 (ITM) не загружены. "
             "Возвращаю 0.0 для BLIP-2 скор."
@@ -494,8 +494,99 @@ def get_blip_caption_bertscore(img: Image.Image, prompt: str) -> float:
         # 7. Всегда освобождаем модель после использования
         if 'model_gpu' in locals():
             _release(model_gpu)
-
 # --- Конец новой метрики ---
+
+# --- НОВАЯ МЕТРИКА: BLIP-2 Caption + BERTScore ---
+@torch.inference_mode()
+def get_blip2_caption_bertscore(img: Image.Image, prompt: str) -> float:
+    """
+    Вычисляет BERTScore между описанием (caption), сгенерированным моделью BLIP-2,
+    и исходным текстовым промптом.
+
+    Args:
+        img (PIL.Image.Image): Входное изображение.
+        prompt (str): Исходный текстовый промпт.
+
+    Returns:
+        float: Среднее значение F1-меры BERTScore. Если `prompt` пуст,
+               модель BLIP-2 Caption не загружена, BERTScore недоступен
+               или произошла ошибка, возвращает 0.0.
+    """
+    # Проверка, загружены ли необходимые компоненты
+    if not BERT_SCORE_AVAILABLE:
+        logger.debug("Библиотека `bert_score` недоступна. Возвращаю 0.0.")
+        return 0.0
+
+    if models.blip2_cap_processor is None or models.blip2_cap_model is None:
+        logger.warning(
+            "Модель или процессор BLIP-2 Caption не загружены. "
+            "Возвращаю 0.0 для BLIP-2 Caption + BERTScore."
+        )
+        return 0.0
+
+    prompt = prompt.strip()
+    if not prompt:
+        logger.debug("Исходный промпт для BLIP-2 Caption + BERTScore пуст. Возвращаю 0.0.")
+        return 0.0
+
+    logger.debug(f"Вычисляю BLIP-2 Caption + BERTScore для промпта: '{prompt[:50]}...'")
+
+    try:
+        # 1. Подготовка входных данных для генерации описания
+        inputs = models.blip2_cap_processor(images=img, return_tensors="pt")
+
+        # 2. Преобразование типа данных для pixel_values (если они есть)
+        if "pixel_values" in inputs:
+             inputs["pixel_values"] = inputs["pixel_values"].to(dtype=DTYPE)
+
+        # 3. Перемещение модели на GPU (если доступен) и данных на то же устройство
+        model_gpu = _to_gpu(models.blip2_cap_model)
+        inputs_moved = {k: v.to(model_gpu.device) for k, v in inputs.items()}
+
+        # 4. Генерация описания (caption)
+        # Используем max_new_tokens вместо max_length
+        generated_ids = model_gpu.generate(**inputs_moved, max_new_tokens=MAX_SIG_TOK)
+
+        # 5. Декодирование сгенерированного описания
+        generated_caption = models.blip2_cap_processor.batch_decode(
+            generated_ids, skip_special_tokens=True
+        )[0].strip()
+
+        logger.debug(f"Сгенерированное описание BLIP-2: '{generated_caption[:100]}...'")
+
+        if not generated_caption:
+            logger.warning("Сгенерированное описание BLIP-2 пусто. Возвращаю 0.0.")
+            return 0.0
+
+        # 6. Вычисление BERTScore между сгенерированным описанием и исходным промптом
+        # bert_score.score возвращает (Precision, Recall, F1)
+        P, R, F1 = bert_score_func(
+            [generated_caption], # candidates (сгенерированный текст)
+            [prompt],           # references (исходный промпт)
+            lang='en',          # Язык (можно сделать параметром)
+            verbose=False,      # Отключаем вывод прогресса
+            device=model_gpu.device.type # Используем то же устройство, что и модель
+        )
+
+        # 7. Извлечение среднего F1-балла
+        bert_score_value = F1.mean().item()
+
+        logger.debug(
+            f"BERTScore (P={P.mean().item():.4f}, R={R.mean().item():.4f}, F1={bert_score_value:.4f}) "
+            f"между BLIP-2 caption и prompt."
+        )
+        return bert_score_value
+
+    except Exception as e:
+        logger.error(f"Ошибка при вычислении BLIP-2 Caption + BERTScore: {e}")
+        return 0.0
+    finally:
+        # 8. Всегда освобождаем модель после использования
+        if 'model_gpu' in locals():
+            _release(model_gpu)
+# --- Конец новой метрики ---
+
+
 
 # --- Шаблон для новой метрики ---
 # При добавлении новой метрики, создайте функцию по аналогии:

@@ -1,4 +1,3 @@
-// configs/comprehensive_pipeline.json
 {
   "pipeline": {
     "enabled_metrics": ["sig", "flor", "iqa", "dino", "blip2", "blip_cap", "blip2_cap"],

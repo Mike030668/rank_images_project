@@ -1,14 +1,10 @@
-// configs/default_pipeline.json
 {
   "pipeline": {
-    "enabled_metrics": ["sig", "flor", "iqa", "dino", "blip2", "blip_cap"],
+    "enabled_metrics": ["sig", "iqa", "blip2"],
     "default_weights": {
       "alpha": 0.6,
-      "beta": 0.4,
       "gamma": 0.2,
-      "delta": 0.1,
-      "epsilon": 0.3,
-      "zeta": 0.0
+      "epsilon": 0.4
     }
   },
   "processing": {

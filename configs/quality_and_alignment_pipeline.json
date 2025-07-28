@@ -1,4 +1,3 @@
-// configs/quality_and_alignment_pipeline.json
 {
   "pipeline": {
     "enabled_metrics": ["sig", "flor", "iqa", "dino", "blip2"],
@@ -7,9 +6,7 @@
       "beta": 0.5,
       "gamma": 0.3,
       "delta": 0.2,
-      "epsilon": 0.4,
-      "zeta": 0.0,
-      "theta": 0.0
+      "epsilon": 0.4
     }
   },
   "processing": {

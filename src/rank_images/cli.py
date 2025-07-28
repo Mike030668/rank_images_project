@@ -10,6 +10,8 @@
 import logging
 import sys
 
+
+
 # --- Настройка логирования ДО любых других импортов ---
 # Отключаем базовую конфигурацию, чтобы установить свою
 logging.getLogger().handlers.clear()
@@ -43,7 +45,7 @@ import pandas as pd
 # Импорт основной логики ранжирования
 from .ranking import rank_folder
 # Импорт загрузчика моделей
-from .models import load_models
+from .models import load_models, METRIC_TO_MODELS # <-- Импортируем карту
 # Импорт конфигурации по умолчанию
 from .config import (
     ALPHA_DEFAULT,
@@ -51,11 +53,11 @@ from .config import (
     GAMMA_DEFAULT,
     DELTA_DEFAULT,
     EPSILON_DEFAULT,
-    ZETA_DEFAULT
+    ZETA_DEFAULT,
+    THETA_DEFAULT, # <-- НОВОЕ
 )
 # --- ИМПОРТ МОДУЛЯ КОНФИГУРАЦИИ ---
-from .pipeline_config import load_pipeline_config, get_default_weights, get_chunk_size
-
+from .pipeline_config import load_pipeline_config, get_default_weights, get_chunk_size, get_enabled_metrics
 # --- Настройка логгирования для CLI ---
 # Базовая настройка логгера для вывода в консоль
 logging.basicConfig(
@@ -78,10 +80,11 @@ def main() -> None:
         description=(
             "Ранжирует изображения в заданной директории на основе "
             "текстовых промптов и внутреннего качества, используя "
-            "SigLIP-2, Florence-2, CLIP-IQA, DINOv2, BLIP-2 ..., см. pipeline_config.get_enabled_metrics()"
+            f"{', '.join(METRIC_TO_MODELS.keys())}." # <-- Используем ключи из карты
         ),
-        formatter_class=argparse.RawTextHelpFormatter, # Для корректного отображения \n в help
+        formatter_class=argparse.RawTextHelpFormatter,
     )
+    
     parser.add_argument(
         "img_dir", 
         nargs='?', 
@@ -139,7 +142,12 @@ def main() -> None:
         default=None, 
         help=f"Вес метрики BLIP Caption + BERTScore к prompt. По умолчанию берётся из JSON-конфига или {ZETA_DEFAULT}.",
     )
-
+    parser.add_argument(
+        "--theta",
+        type=float,
+        default=THETA_DEFAULT,
+        help=f"Вес метрики BLIP-2 Caption + BERTScore к prompt. По умолчанию {THETA_DEFAULT}.",
+    )
     #--- НОВЫЙ АРГУМЕНТ ---
     parser.add_argument(
         "--pipeline-config",
@@ -187,6 +195,7 @@ def main() -> None:
     final_delta = args.delta if args.delta is not None else default_weights_from_config.get("delta", DELTA_DEFAULT)
     final_epsilon = args.epsilon if args.epsilon is not None else default_weights_from_config.get("epsilon", EPSILON_DEFAULT)
     final_zeta = args.zeta if args.zeta is not None else default_weights_from_config.get("zeta", ZETA_DEFAULT) # <-- НОВОЕ
+    final_theta = args.zeta if args.theta is not None else default_weights_from_config.get("theta", THETA_DEFAULT) # <-- НОВОЕ
     # --- Определение финального chunk_size ---
     # Приоритет: CLI > JSON-config > config.py
     final_chunk_size = args.chunk if args.chunk is not None else chunk_size_from_config
@@ -225,7 +234,12 @@ def main() -> None:
     # --- Загрузка моделей ---
     logger.info("Загружаю модели (на CPU)...")
     try:
-        load_models()
+        # Извлекаем список включённых метрик из конфига
+        pipeline_config = load_pipeline_config(args.pipeline_config)
+        enabled_metrics_list = get_enabled_metrics(pipeline_config)
+        
+        # Передаём список в load_models для оптимизированной загрузки
+        load_models(enabled_metrics_list) # <-- Передаём список
         logger.info("Все модели успешно загружены.")
     except Exception as e:
         logger.error(f"Ошибка при загрузке моделей: {e}")
@@ -244,6 +258,7 @@ def main() -> None:
             delta=final_delta,
             epsilon=final_epsilon,
             zeta=final_zeta, 
+            theta=final_theta, 
             # ----------------------------------
             chunk_size=final_chunk_size, # <-- Обновлённый chunk_size
             # --- ПЕРЕДАЁМ КОНФИГУРАЦИЮ ПАЙПЛАЙНА ---
