@@ -35,7 +35,8 @@ from .metrics import (
     get_blip2_match_score,
     # --- НОВАЯ МЕТРИКА ---
     get_blip_caption_bertscore,
-    get_blip2_caption_bertscore, # <-- НОВОЕ
+    get_blip2_caption_bertscore, 
+    get_imr_score, # <-- НОВОЕ
     # --------------------
 )
 # --- ИМПОРТ УТИЛИТ ДЛЯ ПАЙПЛАЙНА ---
@@ -51,7 +52,8 @@ from .config import (
     EPSILON_DEFAULT,
     # --- НОВАЯ МЕТРИКА ---
     ZETA_DEFAULT,
-    THETA_DEFAULT, # <-- НОВОЕ
+    THETA_DEFAULT,
+    PHI_DEFAULT,  # <-- НОВОЕ
     # --------------------
     ALL_METRICS
 )
@@ -68,7 +70,8 @@ def rank_folder(
     epsilon: float = EPSILON_DEFAULT,
     # --- НОВАЯ МЕТРИКА ---
     zeta: float = ZETA_DEFAULT,
-    theta: float = THETA_DEFAULT, # <-- НОВОЕ
+    theta: float = THETA_DEFAULT,
+    phi: float = PHI_DEFAULT,  # <-- НОВОЕ
     # --------------------
     chunk_size: Optional[int] = None,
     # --- ПАЙПЛАЙН ---
@@ -110,6 +113,8 @@ def rank_folder(
         # --- НОВАЯ МЕТРИКА ---
         zeta (float): Вес метрики BLIP Caption + BERTScore к prompt.
                       По умолчанию 0.25.
+         phi (float): Вес метрики imagereward.
+                      По умолчанию 0.4.                     
         # --------------------
         chunk_size (int | None): Максимальное количество токенов в одном фрагменте
                                  текста для SigLIP.
@@ -250,6 +255,13 @@ def rank_folder(
                          #logger.debug(f"  BLIP-2 Caption Score: {blip2_caption_score:.4f}")
                          logger.debug(f"[RANKING_DEBUG] blip2_caption_score для {image_filename}: {blip2_caption_score:.4f}")
 
+                    elif metric_name == "imr":
+                        imr_pos = get_imr_score(img_pil, positive_chunks_siglip)
+                        imr_neg = get_imr_score(img_pil, negative_chunks_siglip)
+                        imr_val = imr_pos - 0.5 * imr_neg # 0.5 можно вынести в cfg
+                        res_dict["imr"] = imr_val
+                        logger.debug(f" IMR: {imr_val:.4f}")
+
                     # --- Добавьте elif для новых метрик здесь ---
                     # elif metric_name == "new_metric":
                     #     new_metric_score = get_new_metric_score(...)
@@ -342,6 +354,12 @@ def rank_folder(
         if "blip2_cap" in enabled_metrics_list:
             total_score += theta * res_dict.get("blip2_cap_norm", 0.0)
             total_weight += theta
+
+        # --- Шаблон для добавления новой метрики ---
+        if "imr" in enabled_metrics_list:
+            total_score += phi * res_dict.get("imr_norm", 0.0)
+            total_weight += phi
+            
         # --------------------
         # --- Шаблон для добавления новой метрики ---
         # if "new_metric" in enabled_metrics_list:

@@ -30,8 +30,16 @@ dependencies = [
     "sentence-transformers==4.1.0",
     
     # --- Компьютерное зрение ---
-    "timm==1.0.17",
-    
+    # --- зависимость timm: >=0.9.2, но <1.0  (ImageReward требует ImageNetInfo) ---
+    "timm>=0.9.2,<1.0",
+    "fsspec>=2025.7.0",
+
+    # --- ImageReward + минимальные deps ---
+    "image-reward==1.5",
+    "clip @ git+https://github.com/openai/CLIP.git",
+    "ftfy",
+    "regex",
+    "tqdm",
     # --- Вычисления и трансформации ---
     "einops",
     "piq",

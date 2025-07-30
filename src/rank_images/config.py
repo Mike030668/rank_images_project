@@ -97,6 +97,12 @@ THETA_DEFAULT: float = 0.2
 float: Вес метрики BLIP-2 Caption + BERTScore к prompt. По умолчанию 0.2.
 """
 
+PHI_DEFAULT: float = 0.4
+"""
+float: Вес метрики imagereward. По умолчанию 0.2.
+"""
+
+
 # --- Словарь всех метрик и их параметров ---
 # Централизованный словарь для унификации конфигурации пайплайна.
 # Ключ: имя метрики (для enabled_metrics).
@@ -129,6 +135,10 @@ ALL_METRICS: Dict[str, Dict[str, Any]] = {
     "blip2_cap": {
         "default_weight": THETA_DEFAULT,
         "description": "Соответствие описания промпту (BLIP-2 Caption + BERTScore)"
+    },
+    "imr": {
+        "default_weight": PHI_DEFAULT,
+        "description": "Оценка качества изображения (imr)"
     },
     # --- Шаблон для добавления новой метрики ---
     # "new_metric": {
