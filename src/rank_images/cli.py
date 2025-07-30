@@ -148,6 +148,9 @@ def main() -> None:
         default=THETA_DEFAULT,
         help=f"Вес метрики BLIP-2 Caption + BERTScore к prompt. По умолчанию {THETA_DEFAULT}.",
     )
+    parser.add_argument("--phi", type=float, default=0.4,
+                    help="Вес ImageReward (imr)")
+
     #--- НОВЫЙ АРГУМЕНТ ---
     parser.add_argument(
         "--pipeline-config",

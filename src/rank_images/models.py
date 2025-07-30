@@ -47,6 +47,9 @@ from .config import (
     DEVICE_CPU,
 )
 
+import ImageReward as RM
+
+
 # --- ИМПОРТ ДЛЯ ПАЙПЛАЙНА ---
 # Импортируем функцию для получения списка всех метрик
 from .pipeline_config import get_all_metrics
@@ -70,6 +73,7 @@ if TYPE_CHECKING:
         Blip2ForConditionalGeneration as Blip2CapModel,
     )
     from torchmetrics.multimodal import CLIPImageQualityAssessment as IQAMetric
+    
 
 # Настройка логгирования
 logger = logging.getLogger(__name__)
@@ -156,6 +160,13 @@ blip2_cap_model: Optional['Blip2CapModel'] = None
 Blip2ForConditionalGeneration: Модель BLIP-2 для генерации описаний (captioning).
                               Используется для blip_2_caption_bertscore.
 """
+
+
+imr_model  = None        # reward-модель
+"""
+«человеческая» оценка стиля/композиции.
+"""
+
 # --------------------
 
 # --- Карта соответствия метрик и моделей ---
@@ -170,6 +181,7 @@ METRIC_TO_MODELS: Dict[str, List[str]] = {
     "blip_cap": ["blip_cap_processor", "blip_cap_model"],
     # Для blip2_caption_bertscore (новая метрика) потребуется blip2_caption_model
     "blip2_cap": ["blip2_cap_processor", "blip2_cap_model"], 
+    "imr": ["imr_model"], 
 }
 """
 Dict[str, List[str]]: Карта соответствия между именами метрик и
@@ -226,6 +238,7 @@ def load_models(enabled_metrics_list: Optional[List[str]] = None) -> None:
     global blip_cap_processor, blip_cap_model
     # --- ДОБАВИТЬ НОВЫЕ ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
     global blip2_cap_processor, blip2_cap_model
+    global imr_model
     # --------------------------------------------
 
     logger.info("Начинаю загрузку моделей (на CPU)...")
@@ -365,11 +378,17 @@ def load_models(enabled_metrics_list: Optional[List[str]] = None) -> None:
             blip2_cap_processor, blip2_cap_model = None, None
             logger.info("Модель BLIP-2 Caption пропущена (не включена).")
         # --- Конец загрузки BLIP-2 Caption ---
+
+        #--- Загрузка ImageReward ---
+        if "imr" in enabled_metrics_list and imr_model is None:
+            imr_model = RM.load("ImageReward-v1.0")
+            imr_model.device = torch.device("cpu")   # важный переключатель
+            imr_model.to("cpu")
+            #--- Конец загрузки ImageReward ---
         logger.info("Загрузка моделей завершена.")
 
     except Exception as e:
         logger.error(f"Ошибка при загрузке моделей", exc_info=True)
-        # Продолжаем работу без BLIP Caption
         logger.warning("Загрузка моделей не завершена.")
     # --- Конец загрузки BLIP Caption ---
 # --- Конец модуля ---
