@@ -1,54 +1,41 @@
-# docker/tifa/Dockerfile.slim
-FROM python:3.10-slim
-
-# ─────────────────── системные пакеты ────────────────────────────────
-RUN apt-get update \
- && DEBIAN_FRONTEND=noninteractive \
-    apt-get install -y --no-install-recommends \
-        build-essential git libgl1 libglib2.0-0 \
+# ───────── базовый слой ────────────────────────────────────────────────────────
+FROM python:3.10-slim AS build
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive \
+    apt-get install -y --no-install-recommends build-essential git libgl1 libglib2.0-0 \
  && rm -rf /var/lib/apt/lists/*
 
-# ─────────────────── базовый Python ──────────────────────────────────
+# свежий pip + инструменты сборки
 RUN pip install --no-cache-dir --upgrade pip==23.3.1 setuptools wheel
 
-# ─────────────────── тяжёлые PyTorch-колёса ──────────────────────────
+# ───────── лёгкие «runtime»-зависимости ────────────────────────────────────────
 RUN pip install --no-cache-dir \
-        torch==2.2.2+cpu \
-        torchvision==0.17.2+cpu \
-        -f https://download.pytorch.org/whl/cpu/torch_stable.html
+      torch==2.2.2+cpu torchvision==0.17.2+cpu  \
+      -f https://download.pytorch.org/whl/cpu/torch_stable.html
 
-# ─────────────────── лёгкие зависимости ──────────────────────────────
 RUN pip install --no-cache-dir \
-        "numpy<2" \
-        pillow \
-        requests \
-        tqdm \
-        addict \
-        packaging \
-        filelock \
-        pyarrow==14.0.2 \
-        datasets==2.13.0 \
-        decord==0.6.0 \
-        fastapi \
-        "uvicorn[standard]" \
-        transformers==4.31.0 \
-        modelscope==1.9.3
+      "numpy<2" pillow requests tqdm addict packaging filelock \
+      pyarrow==14.0.2 datasets==2.13.0 \  # ← 2.19 ломает ModelScope 1.9.3 :contentReference[oaicite:0]{index=0} \
+      decord==0.6.0 fastapi "uvicorn[standard]" transformers==4.31.0 \
+      modelscope==1.9.3                   # содержит OFA-pipeline :contentReference[oaicite:1]{index=1}
 
-# ─────────────────── проект TIFA ─────────────────────────────────────
+# ───────── ставим сам TIFA + tifascore ────────────────────────────────────────
 WORKDIR /app
 COPY external/TIFA /app/TIFA
 
-# вырезаем тяжеловесные зависимости из setup.py
-RUN sed -Ei '/(fairseq|streamlit|torchmetrics|kaggle|pandas|evaluate)/d' \
-        /app/TIFA/setup.py \
- && pip install --no-cache-dir --no-deps -e /app/TIFA
+# выкидываем тяжёлые, но не нужные зависимости из setup.py TIFA
+RUN sed -Ei '/(fairseq|streamlit|torchmetrics|kaggle|pandas|evaluate)/d' /app/TIFA/setup.py \
+ && pip install --no-cache-dir --no-deps -e /app/TIFA                   # «легковесный» TIFA
 
-# ─────────────────── чистка ──────────────────────────────────────────
-RUN apt-get purge -y build-essential git \
- && apt-get autoremove -y \
- && rm -rf /root/.cache/pip
+# ! главное отличие: ставим tifascore отдельным колесом БЕЗ зависимостей
+#   это даёт сам код, но не заставляет тянуть fairseq / lavis
+RUN pip install --no-cache-dir --no-deps tifascore==1.0.1              # :contentReference[oaicite:2]{index=2}
 
-# ─────────────────── приложение ─────────────────────────────────────
-COPY docker/tifa/app.py /app/app.py
+# ───────── финальная чистка ────────────────────────────────────────────────────
+RUN apt-get purge -y build-essential git && apt-get autoremove -y && rm -rf /root/.cache/pip
+
+# ───────── финальный слой (чистый ран-тайм) ───────────────────────────────────
+FROM python:3.10-slim
+COPY --from=build /usr/local /usr/local
+COPY --from=build /app /app
 WORKDIR /app
 CMD ["uvicorn", "app:api", "--host", "0.0.0.0", "--port", "8000"]
