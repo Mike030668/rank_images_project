@@ -37,6 +37,7 @@ from .metrics import (
     get_blip_caption_bertscore,
     get_blip2_caption_bertscore, 
     get_imr_score, # <-- НОВОЕ
+    get_tifa_score,        # 🆕 импорт функции TIFA
     # --------------------
 )
 # --- ИМПОРТ УТИЛИТ ДЛЯ ПАЙПЛАЙНА ---
@@ -54,6 +55,7 @@ from .config import (
     ZETA_DEFAULT,
     THETA_DEFAULT,
     PHI_DEFAULT,  # <-- НОВОЕ
+    TIFA_DEFAULT
     # --------------------
     ALL_METRICS
 )
@@ -72,6 +74,7 @@ def rank_folder(
     zeta: float = ZETA_DEFAULT,
     theta: float = THETA_DEFAULT,
     phi: float = PHI_DEFAULT,  # <-- НОВОЕ
+    tifa: float = TIFA_DEFAULT,  # 🆕 вес для TIFA
     # --------------------
     chunk_size: Optional[int] = None,
     # --- ПАЙПЛАЙН ---
@@ -183,6 +186,8 @@ def rank_folder(
             # Подготавливаем позитивные и негативные фрагменты для SigLIP
             positive_chunks_siglip = _make_chunks(row["prompt"], row["prompt2"])
             negative_chunks_siglip = _make_chunks(row["negative"], row["negative2"])
+            # Полный положительный промпт одной строкой (для TIFA)
+            prompt_full_str = " ".join(positive_chunks_siglip)
 
             # --- Вычисление метрик ---
             # --- Создаём пустой словарь для результатов текущего изображения ---
@@ -261,6 +266,15 @@ def rank_folder(
                         imr_val = imr_pos - 0.5 * imr_neg # 0.5 можно вынести в cfg
                         res_dict["imr"] = imr_val
                         logger.debug(f" IMR: {imr_val:.4f}")
+
+                    # --- НОВАЯ МЕТРИКА TIFA ---
+                    elif metric_name == "tifa":
+                        tifa_val = get_tifa_score(
+                            img_pil,
+                            prompt_full_str
+                        )
+                        res_dict["tifa"] = tifa_val
+                        logger.debug(f"  TIFA: {tifa_val:.4f}")
 
                     # --- Добавьте elif для новых метрик здесь ---
                     # elif metric_name == "new_metric":
@@ -359,6 +373,10 @@ def rank_folder(
         if "imr" in enabled_metrics_list:
             total_score += phi * res_dict.get("imr_norm", 0.0)
             total_weight += phi
+
+        if "tifa" in enabled_metrics_list:
+            total_score += tifa * res_dict.get("tifa_norm", 0.0)
+            total_weight += tifa
             
         # --------------------
         # --- Шаблон для добавления новой метрики ---

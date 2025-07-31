@@ -161,10 +161,13 @@ Blip2ForConditionalGeneration: Модель BLIP-2 для генерации о�
                               Используется для blip_2_caption_bertscore.
 """
 
-
 imr_model  = None        # reward-модель
 """
 «человеческая» оценка стиля/композиции.
+"""
+
+tifa_evaluator = None  # TIFA Evaluator
+"""TIFA Evaluator: Модель для оценки качества изображений по метрикам TIFA.
 """
 
 # --------------------
@@ -182,6 +185,7 @@ METRIC_TO_MODELS: Dict[str, List[str]] = {
     # Для blip2_caption_bertscore (новая метрика) потребуется blip2_caption_model
     "blip2_cap": ["blip2_cap_processor", "blip2_cap_model"], 
     "imr": ["imr_model"], 
+    "tifa": ["tifa_evaluator"],  # Добавляем TIFA Evaluator
 }
 """
 Dict[str, List[str]]: Карта соответствия между именами метрик и
@@ -385,7 +389,16 @@ def load_models(enabled_metrics_list: Optional[List[str]] = None) -> None:
             imr_model.device = torch.device("cpu")   # важный переключатель
             imr_model.to("cpu")
             #--- Конец загрузки ImageReward ---
+
+        #--- Загрузка TIFA ---
+        if "tifa" in enabled_metrics_list and tifa_evaluator is None:
+            from tifa import TifaEvaluator
+            tifa_evaluator = TifaEvaluator(model="blip2_base")  # CPU
+            logger.info("🟢 TIFA evaluator loaded")
+        # --- Загрузка TIFA Evaluator ---
+        
         logger.info("Загрузка моделей завершена.")
+
 
     except Exception as e:
         logger.error(f"Ошибка при загрузке моделей", exc_info=True)

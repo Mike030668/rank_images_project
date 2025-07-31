@@ -643,6 +643,16 @@ def get_imr_score(img: Image.Image, txts: List[str]) -> float:  # noqa: D401
 
 # --- Конец новой метрики ---
 
+# ─── TIFA metric ─────────────────────────────────────────────────
+    @torch.inference_mode()
+    def get_tifa_score(img: Image.Image, prompt: str) -> float:
+        if models.tifa_evaluator is None:
+            raise RuntimeError("TIFA evaluator not loaded")
+        with torch.cuda.amp.autocast(enabled=False):
+            return float(models.tifa_evaluator.evaluate(prompt, img))
+
+# --- Конец новой метрики ---
+
 # --- Шаблон для новой метрики ---
 # При добавлении новой метрики, создайте функцию по аналогии:
 #

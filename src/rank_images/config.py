@@ -99,9 +99,13 @@ float: Вес метрики BLIP-2 Caption + BERTScore к prompt. По умол
 
 PHI_DEFAULT: float = 0.4
 """
-float: Вес метрики imagereward. По умолчанию 0.2.
+float: Вес метрики imagereward. По умолчанию 0.4.
 """
 
+TIFA_DEFAULT: float = 0.6
+"""
+float: Вес метрики imagerewTIF. По умолчанию 0.6.
+"""
 
 # --- Словарь всех метрик и их параметров ---
 # Централизованный словарь для унификации конфигурации пайплайна.
@@ -140,6 +144,11 @@ ALL_METRICS: Dict[str, Dict[str, Any]] = {
         "default_weight": PHI_DEFAULT,
         "description": "Оценка качества изображения (imr)"
     },
+    "tifa": {
+        "default_weight": TIFA_DEFAULT,
+        "description": "Оценка качества изображения (tifa)"
+    },
+
     # --- Шаблон для добавления новой метрики ---
     # "new_metric": {
     #     "default_weight": NEW_METRIC_WEIGHT_DEFAULT,
