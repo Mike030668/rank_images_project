@@ -1,0 +1,3 @@
+[submodule "external/TIFA"]
+	path = external/TIFA
+	url = https://github.com/Mike030668/tifa-Text-to-Image-Faithfulness-Evaluation-with-Question-Answering.git
