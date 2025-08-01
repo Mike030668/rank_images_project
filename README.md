@@ -174,7 +174,6 @@ python -m venv venv
 #  (ImageReward требует git-репозиторий CLIP → укажем его явно)
 pip install --pre \
   --extra-index-url https://download.pytorch.org/whl/nightly/cu121 \
-  --index-strategy unsafe-best-match \
   -e . \
   -r requirements.txt \
   -c constraints.txt
@@ -205,14 +204,26 @@ uv venv
 uv pip install --prerelease=allow \
   --extra-index-url https://download.pytorch.org/whl/nightly/cu121 \
   --index-strategy unsafe-best-match \
-  -e . \
+  -e .
+
+# отдельно обновляем до нужных
+uv pip install "timm>=0.9.2,<1.0" "fsspec==2025.3.0"
+
+# 4a. проанрка
+python - <<EOF
+import timm, fsspec, datasets, ImageReward, torch, transformers
+print("timm:      ", timm.__version__)       # 0.6.13
+print("fsspec:    ", fsspec.__version__)     # 2025.3.0
+print("datasets:  ", datasets.__version__)   # 2.13.0
+print("ImageReward OK")                      # просто уверен, что нет ошибки импорта
+print("torch:     ", torch.__version__)      # 2.7.1
+print("transformers:", transformers.__version__)  # 4.53.1
+EOF
 
 # 5. (Опционально) Установите расширения
 #   • Jupyter-ноутбуки
 #       uv pip install -e .[notebook]
 #   • Метрики на основе BERTScore (BLIP Caption, BLIP-2 Caption)
-
-```
 
 ## Использование
 

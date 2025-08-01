@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
 Name: rank_images
 Version: 0.1.0
-Summary: Ранжирование изображений на основе текстовых промптов и качества с помощью SigLIP-2, Florence-2, CLIP-IQA и DINOv2.
+Summary: Ранжирование изображений на основе текстовых промптов и качества с помощью SigLIP-2, Florence-2, CLIP-IQA, DINOv2, BLIP-2 ITM и BLIP-2 Caption + BERTScore.
 Author-email: MikePuzitsky <puzitski.mikhail@gmail.com>
 License: MIT
 Requires-Python: >=3.9
@@ -13,8 +13,11 @@ Requires-Dist: accelerate
 Requires-Dist: torchmetrics[multimodal]
 Requires-Dist: transformers==4.53.1
 Requires-Dist: sentence-transformers==4.1.0
-Requires-Dist: fsspec>=2025.3.0
+Requires-Dist: bert-score==0.3.13
+Requires-Dist: fsspec==2025.3.0
 Requires-Dist: pyarrow==14.0.2
+Requires-Dist: image-reward==1.5
+Requires-Dist: datasets==2.13.0
 Requires-Dist: clip@ git+https://github.com/openai/CLIP.git
 Requires-Dist: ftfy
 Requires-Dist: regex
@@ -36,13 +39,22 @@ Requires-Dist: pytest; extra == "test"
 Requires-Dist: pytest-cov; extra == "test"
 Provides-Extra: notebook
 Requires-Dist: jupyter; extra == "notebook"
+Provides-Extra: caption
+Requires-Dist: bert_score; extra == "caption"
+Provides-Extra: compatibility-fixes
+Requires-Dist: timm<1.0,==0.9.2; extra == "compatibility-fixes"
+Requires-Dist: datasets==2.13.0; extra == "compatibility-fixes"
+Requires-Dist: image-reward==1.5; extra == "compatibility-fixes"
+Requires-Dist: fsspec==2025.3.0; extra == "compatibility-fixes"
+Requires-Dist: pyarrow==14.0.2; extra == "compatibility-fixes"
+Requires-Dist: bert-score==0.3.13; extra == "compatibility-fixes"
 
 # Rank Images Project
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Инструмент для ранжирования изображений на основе текстовых промптов и внутреннего качества, используя современные модели искусственного интеллекта: **SigLIP-2**, **Florence-2**, **CLIP-IQA**, **DINOv2**, **ImageReward**, **BLIP-2 (Image-Text Matching)**, **BLIP Caption + BERTScore** и **BLIP-2 Caption + BERTScore**.
+Инструмент для ранжирования изображений на основе текстовых промптов и внутреннего качества, используя современные модели искусственного интеллекта: **SigLIP-2**, **Florence-2**, **CLIP-IQA**, **DINOv2**, **BLIP-2 (Image-Text Matching)**, **BLIP Caption + BERTScore** , **BLIP-2 Caption + BERTScore** и  **ImageReward**.
 Ранжирование происходит на основе комбинированного балла, рассчитанного из **восьми метрик**:
 
 ## Содержание
@@ -67,10 +79,10 @@ Requires-Dist: jupyter; extra == "notebook"
 2.  **Поиск объектов по запросу (Florence-2):** Проверяет, насколько успешно Florence-2 может обнаружить объекты, описанные в позитивных промптах, на изображении. Для формирования итогового балла метрики также вычисляется средний скор для негативных промптов, и из результата для позитивных промптов вычитается результат для негативных.
 3.  **Общее качество изображения (CLIP-IQA):** Дает оценку общего визуального качества изображения.
 4.  **Внутренняя структура (DINOv2):** Косвенно оценивает "структурированность" или богатство деталей изображения.
-5. **Human-Preference Score (ImageReward):** Обученная на 137k человеческих предпочтениях reward-модель (0–10), захватывающая композицию и стиль.
-6.  **Соответствие изображения тексту (BLIP-2 ITM):** Оценивает вероятность соответствия изображения отдельным позитивным промптам, используя специализированную модель BLIP-2 для Image-Text Matching. Для формирования итогового балла метрики также вычисляется средний скор для негативных промптов, и из результата для позитивных промптов вычитается результат для негативных.
-7.  **Соответствие описания промпту (BLIP Caption + BERTScore):** Генерирует описание изображения с помощью модели BLIP и оценивает семантическое сходство этого описания с исходным промптом с помощью метрики BERTScore.
-8.  **Соответствие описания промпту (BLIP-2 Caption + BERTScore):** Генерирует описание изображения с помощью модели BLIP-2 и оценивает семантическое сходство этого описания с исходным промптом с помощью метрики BERTScore.
+5.  **Соответствие изображения тексту (BLIP-2 ITM):** Оценивает вероятность соответствия изображения отдельным позитивным промптам, используя специализированную модель BLIP-2 для Image-Text Matching. Для формирования итогового балла метрики также вычисляется средний скор для негативных промптов, и из результата для позитивных промптов вычитается результат для негативных.
+6.  **Соответствие описания промпту (BLIP Caption + BERTScore):** Генерирует описание изображения с помощью модели BLIP и оценивает семантическое сходство этого описания с исходным промптом с помощью метрики BERTScore.
+7.  **Соответствие описания промпту (BLIP-2 Caption + BERTScore):** Генерирует описание изображения с помощью модели BLIP-2 и оценивает семантическое сходство этого описания с исходным промптом с помощью метрики BERTScore.
+8. **Human-Preference Score (ImageReward):** Обученная на 137k человеческих предпочтениях reward-модель (0–10), захватывающая композицию и стиль.
 
 Каждая метрика имеет свой вес (alpha, beta, gamma, delta, epsilon, zeta, theta), который можно настроить. Модели оптимизированы для работы как на GPU (с экономией VRAM), так и на CPU.
 
@@ -80,89 +92,104 @@ Requires-Dist: jupyter; extra == "notebook"
 
 **Доступные метрики:**
 
-1.  **`sig` (SigLIP-2):** Оценивает схожесть изображения и текста.
-2.  **`flor` (Florence-2):** Проверяет, насколько успешно Florence-2 может обнаружить объекты, описанные в позитивных промптах.
-3.  **`iqa` (CLIP-IQA):** Дает оценку общего визуального качества изображения.
-4.  **`dino` (DINOv2):** Косвенно оценивает "структурированность" или богатство деталей изображения.
-5.  **`blip2` (BLIP-2 ITM):** Оценивает вероятность соответствия изображения отдельным позитивным промптам.
-6.  **`blip_cap` (BLIP Caption + BERTScore):** Оценивает семантическое сходство описания, сгенерированного BLIP, с исходным промптом.
-7.  **`blip2_cap` (BLIP-2 Caption + BERTScore):** Оценивает семантическое сходство описания, сгенерированного BLIP-2, с исходным промптом.
+| Метрика | Имя в коде | Вес по умолчанию | Описание |
+| :--- | :--- | :--- | :--- |
+| **Схожесть изображения и текста (SigLIP-2)** | `sig` | `alpha` (0.6) | Оценивает, насколько изображение соответствует позитивным текстовым запросам и отличается от негативных. |
+| **Поиск объектов по запросу (Florence-2)** | `flor` | `beta` (0.4) | Проверяет, насколько успешно Florence-2 может обнять объекты, описанные в позитивных промптах, на изображении. Для формирования итогового балла метрики также вычисляется средний скор для негативных промптов, и из результата для позитивных промптов вычитается результат для негативных. |
+| **Общее качество изображения (CLIP-IQA)** | `iqa` | `gamma` (0.2) | Дает оценку общего визуального качества изображения. |
+| **Внутренняя структура (DINOv2)** | `dino` | `delta` (0.1) | Косвенно оценивает "структурированность" или богатство деталей изображения. |
+| **Соответствие изображения тексту (BLIP-2 ITM)** | `blip2` | `epsilon` (0.3) | Оценивает вероятность соответствия изображения отдельным позитивным промптам, используя специализированную модель BLIP-2 для Image-Text Matching. Для формирования итогового балла метрики также вычисляется средний скор для негативных промптов, и из результата для позитивных промптов вычитается результат для негативных. |
+| **Соответствие описания промпту (BLIP Caption + BERTScore)** | `blip_cap` | `zeta` (0.25) | Генерирует описание изображения с помощью модели BLIP и оценивает семантическое сходство этого описания с исходным промптом с помощью метрики BERTScore. |
+| **Соответствие описания промпту (BLIP-2 Caption + BERTScore)** | `blip2_cap` | `theta` (0.2) | Генерирует описание изображения с помощью модели BLIP-2 и оценивает семантическое сходство этого описания с исходным промптом с помощью метрики BERTScore. |
+| **Human Preference Score (ImageReward)** | `imr` | `phi` (0.3) | Оценивает изображение на основе предпочтений человека (0–10), обученная на 137k человеческих оценках. |
 
 **Общая логика вычисления:**
 
 1.  **Вычисление исходных баллов метрик (`raw_score`)**:
-    Для каждого изображения вычисляются **исходные** (ненормализованные) значения для **всех доступных** метрик. Используются только те метрики, которые указаны в списке `enabled_metrics` конфигурации пайплайна.
-    *   **`sig`**:
-        ```python
-        raw_sig = get_siglip_score(image, positive_prompts) - get_siglip_score(image, negative_prompts)
+    Для каждого изображения вычисляются **исходные** (ненормализованные) значения для **всех включённых** метрик. Используются только те метрики, которые указаны в списке `enabled_metrics` конфигурации пайплайна.
+    *   **`sig` (SigLIP-2)**:
         ```
-    *   **`flor`**:
-        ```python
-        raw_flor = avg(get_florence_score(image, p) for p in positive_prompts) - avg(get_florence_score(image, n) for n in negative_prompts)
+        raw_sig = get_siglip_score(image, positive_chunks_siglip) - get_siglip_score(image, negative_chunks_siglip)
         ```
-    *   **`iqa`**:
-        ```python
+    *   **`flor` (Florence-2)**:
+        ```
+        raw_flor = avg(get_florence_score(image, p) for p in positive_chunks_flor) - avg(get_florence_score(image, n) for n in negative_chunks_flor)
+        ```
+    *   **`iqa` (CLIP-IQA)**:
+        ```
         raw_iqa = get_iqa(image)
         ```
         *(Не использует промпты)*
-    *   **`dino`**:
-        ```python
+    *   **`dino` (DINOv2)**:
+        ```
         raw_dino = get_dino(image)
         ```
         *(Не использует промпты)*
-    *   **`blip2`**:
-        ```python
-        raw_blip2 = get_blip2_match_score(image, positive_prompts) - get_blip2_match_score(image, negative_prompts)
+    *   **`blip2` (BLIP-2 ITM)**:
         ```
-    *   **`blip_cap`**:
-        ```python
+        raw_blip2 = get_blip2_match_score(image, positive_chunks_blip2) - get_blip2_match_score(image, negative_chunks_blip2)
+        ```
+    *   **`blip_cap` (BLIP Caption + BERTScore)**:
+        ```
         raw_blip_cap = get_blip_caption_bertscore(image, prompt)
         ```
         *(Использует основной `prompt`, не разбивая на чанки)*
-    *   **`blip2_cap`**:
-        ```python
+    *   **`blip2_cap` (BLIP-2 Caption + BERTScore)**:
+        ```
         raw_blip2_cap = get_blip2_caption_bertscore(image, prompt)
         ```
         *(Использует основной `prompt`, не разбивая на чанки)*
+    *   **`imr` (ImageReward)**:
+        ```
+        raw_imr = get_imr(image, prompt)
+        ```
+        *(Использует основной `prompt`)*
 
 2.  **Нормализация по Z-оценке (`z_score`)**:
-    После обработки всех изображений, для **каждой включённой** метрики (`m`) вычисляется Z-нормализованное значение на основе всех изображений в наборе:
+    Для каждой **включённой** метрики вычисляется Z-нормализованное значение на основе всех изображений в наборе:
     ```
-    z_m = (raw_m_scores - mean(raw_m_scores)) / (std(raw_m_scores) + 1e-8)
+    z_sig     = (_z(raw_sig_scores) + 1e-8)     / (std(raw_sig_scores) + 1e-8)
+    z_flor    = (_z(raw_flor_scores) + 1e-8)    / (std(raw_flor_scores) + 1e-8)
+    z_iqa     = (_z(raw_iqa_scores) + 1e-8)     / (std(raw_iqa_scores) + 1e-8)
+    z_dino    = (_z(raw_dino_scores) + 1e-8)    / (std(raw_dino_scores) + 1e-8)
+    z_blip2   = (_z(raw_blip2_scores) + 1e-8)   / (std(raw_blip2_scores) + 1e-8)
+    z_blip_cap= (_z(raw_blip_cap_scores) + 1e-8)/ (std(raw_blip_cap_scores) + 1e-8)
+    z_blip2_cap=(_z(raw_blip2_cap_scores) + 1e-8)/(std(raw_blip2_cap_scores) + 1e-8)
+    z_imr     = (_z(raw_imr_scores) + 1e-8)     / (std(raw_imr_scores) + 1e-8)
     ```
-    *(Добавление `1e-8` для численной стабильности.)*
+    *(Здесь `_z(score_array)` — это стандартная Z-оценка: `(score_array - mean(score_array)) / std(score_array)`. Добавление `1e-8` для численной стабильности.)*
 
 3.  **Вычисление итогового нормализованного балла (`normalized_total`)**:
-    Нормализованные баллы комбинируются с весами, **только если метрика включена**:
+    Нормализованные баллы комбинируются с весами **только для включённых метрик**:
     ```
     normalized_total = sum(
-        weight_map[m] * z_m for m in enabled_metrics_list
+        weight_map[m] * res_dict.get(f"{m}_norm", 0.0) for m in enabled_metrics_list
     )
     ```
-    Где `weight_map` — это словарь, связывающий имя метрики с её весом:
+    Где `weight_map` — это словарь весов:
     ```python
     weight_map = {
-        "sig": alpha,      # Вес SigLIP-2
-        "flor": beta,      # Вес Florence-2
-        "iqa": gamma,      # Вес CLIP-IQA
-        "dino": delta,     # Вес DINOv2
-        "blip2": epsilon,  # Вес BLIP-2 ITM
-        "blip_cap": zeta,  # Вес BLIP Caption + BERTScore
-        "blip2_cap": theta,# Вес BLIP-2 Caption + BERTScore
+        "sig": alpha,
+        "flor": beta,
+        "iqa": gamma,
+        "dino": delta,
+        "blip2": epsilon,
+        "blip_cap": zeta,
+        "blip2_cap": theta,
+        "imr": phi, # <-- НОВОЕ
     }
     ```
 
 4.  **Финальный итоговый балл (`total`)**:
-    Чтобы получить значение в привычном диапазоне и учесть сумму используемых весов, итоговый балл нормализуется:
+    Чтобы получить значение в привычном диапазоне и учесть сумму весов, итоговый балл нормализуется:
     ```
     total = normalized_total / sum(weight_map[m] for m in enabled_metrics_list)
     ```
-    Если сумма используемых весов равна 0, `total` устанавливается в 0.
+    Если сумма весов равна 0, `total` устанавливается в 0.
 
-**Важно:** Весовые коэффициенты (`alpha`, `beta`, `gamma`, `delta`, `epsilon`, `zeta`, `theta`) по умолчанию подобраны для демонстрационных данных. Для получения наилучших результатов на ваших собственных наборах изображений **необходимо вручную подбирать** эти коэффициенты. Это позволяет точно настроить вклад каждой метрики в итоговое ранжирование, особенно при работе с разнородными примерами.
+**Важно:** Весовые коэффициенты (`alpha`, `beta`, `gamma`, `delta`, `epsilon`, `zeta`, `theta`, `phi`) по умолчанию подобраны для демонстрационных данных. Для получения наилучших результатов на ваших собственных наборах изображений **необходимо вручную подбирать** эти коэффициенты. Это позволяет точно настроить вклад каждой метрики в итоговое ранжирование, особенно при работе с разнородными примерами.
 
-
-Каждая метрика имеет свой вес (alpha, beta, gamma, delta, epsilon), который можно настроить. Модели оптимизированы для работы как на GPU (с экономией VRAM), так и на CPU.
+Каждая метрика имеет свой вес (alpha, beta, gamma, delta, epsilon ...), который можно настроить. Модели оптимизированы для работы как на GPU (с экономией VRAM), так и на CPU.
 
 ## Возможности
 
@@ -193,19 +220,19 @@ python -m venv venv
 #   Linux/macOS: source venv/bin/activate
 #   Windows:     venv\Scripts\activate
 
-# 3. # 3. Установите проект и зависимости (editable mode)
+# 3. Установите проект и зависимости (editable mode)
    #    Используем --pre и дополнительный индекс для установки nightly PyTorch
 #  (ImageReward требует git-репозиторий CLIP → укажем его явно)
 pip install --pre \
   --extra-index-url https://download.pytorch.org/whl/nightly/cu121 \
   -e . \
-  "clip @ git+https://github.com/openai/CLIP.git"
+  -r requirements.txt \
+  -c constraints.txt
+
 
 # 4. (Опционально) Установите дополнительные зависимости
 # Для Jupyter-ноутбуков:
 # pip install -e .[notebook]
-# Для метрик, использующих BERTScore (BLIP Caption, BLIP-2 Caption):
-pip install -e .[caption]
 ```
 
 ### Вариант 2: Используя `uv pip` (если установлен `uv`)
@@ -228,14 +255,13 @@ uv venv
 uv pip install --prerelease=allow \
   --extra-index-url https://download.pytorch.org/whl/nightly/cu121 \
   --index-strategy unsafe-best-match \
-  -e . \
-  "clip @ git+https://github.com/openai/CLIP.git"
+  -e .
 
 # 5. (Опционально) Установите расширения
 #   • Jupyter-ноутбуки
 #       uv pip install -e .[notebook]
 #   • Метрики на основе BERTScore (BLIP Caption, BLIP-2 Caption)
-        uv pip install -e .[caption]
+
 ```
 
 ## Использование
@@ -336,13 +362,13 @@ rank-images --help
 ```
 usage: rank-images [-h] [--prompts PROMPTS] [--alpha ALPHA] [--beta BETA]
                    [--gamma GAMMA] [--delta DELTA] [--epsilon EPSILON]
-                   [--zeta ZETA] [--theta THETA] [--chunk CHUNK] [--demo]
-                   [--pipeline-config PIPELINE_CONFIG]
+                   [--zeta ZETA] [--theta THETA] [--phi PHI]
+                   [--chunk CHUNK] [--demo] [--pipeline-config PIPELINE_CONFIG]
                    img_dir
 
 Ранжирует изображения в заданной директории на основе текстовых промптов и
 внутреннего качества, используя SigLIP-2, Florence-2, CLIP-IQA, DINOv2,
-BLIP-2 (ITM) и BLIP-2/Florence-2 Caption + BERTScore.
+BLIP-2 (ITM), BLIP Caption + BERTScore, BLIP-2 Caption + BERTScore и ImageReward.
 
 positional arguments:
   img_dir               Путь к директории с изображениями для ранжирования.
@@ -370,6 +396,8 @@ options:
                         По умолчанию 0.25.
   --theta THETA         Вес метрики BLIP-2 Caption + BERTScore к prompt.
                         По умолчанию 0.2.
+  --phi PHI             Вес метрики ImageReward (Human Preference Score).
+                        По умолчанию 0.3. # <-- НОВОЕ
   --chunk CHUNK         Максимальное количество токенов в одном фрагменте
                         текста для SigLIP.
                         Используется для разбиения длинных текстов. По
@@ -377,7 +405,7 @@ options:
   --demo                Запустить демонстрацию на встроенных примерах из
                         data/demo_images/.
   --pipeline-config PIPELINE_CONFIG
-                        Путь к JSON-файлу конфигурации пайплайна. Определяет,
+                        Путь к JSON-файл конфигурации пайплайна. Определяет,
                         какие метрики включены и их веса по умолчанию. Если не
                         указан, используется стандартная конфигурация.
 ```
@@ -388,36 +416,47 @@ options:
 
 ```
 rank_images_project/
-├── README.md                 # Этот файл
-├── pyproject.toml            # Конфигурация проекта и зависимостей
-├── .gitignore                # Файлы и папки, игнорируемые Git
-├── configs/                  # JSON-файлы конфигурации пайплайна
-│   ├── default_pipeline.json # Конфигурация по умолчанию
-│   ├── caption_focus_pipeline.json # Профиль: фокус на captioning
-│   ├── quality_and_alignment_pipeline.json # Профиль: качество и соответствие
-│   └── ...                   # Другие пользовательские профили
+├── README.md # Этот файл
+├── pyproject.toml # Конфигурация проекта и его основных зависимостей.
+# Используется pip install -e . для установки.
+├── requirements.txt # (Опционально) Фиксированный список зависимостей, сгенерированный uv pip compile.
+# Может использоваться для воспроизводимой установки с pip install -r.
+├── constraints.txt # (Опционально) Фиксированные версии критически важных библиотек.
+# Используется с pip install -r requirements.txt -c constraints.txt
+# для обеспечения совместимости (например, timm==0.6.13).
+├── .gitignore # Файлы и папки, игнорируемые Git
+├── configs/ # JSON-файлы конфигурации пайплайна
+│ ├── default_pipeline.json # Конфигурация по умолчанию
+│ ├── caption_focus_pipeline.json # Профиль: фокус на captioning
+│ ├── quality_and_alignment_pipeline.json # Профиль: качество и соответствие
+│ └── ... # Другие пользовательские профили
 ├── data/
-│   ├── raw/                  # (Опционально) Ваши собственные изображения для обработки
-│   └── demo_images/          # Демонстрационные изображения и промпты
-│       ├── image1.jpg        # Пример изображения 1
-│       ├── image2.png        # Пример изображения 2
-│       └── prompts.json     # Промпты для демонстрационных изображений
-├── notebooks/                # Jupyter ноутбуки для исследований
+│ ├── raw/ # (Опционально) Ваши собственные изображения для обработки
+│ └── demo_images/ # Демонстрационные изображения и промпты
+│ ├── image1.jpg # Пример изображения 1
+│ ├── image2.png # Пример изображения 2
+│ └── prompts.json # Промпты для демонстрационных изображений
+├── notebooks/ # Jupyter ноутбуки для исследований
 ├── src/
-│   └── rank_images/          # Основной пакет Python
-│       ├── __init__.py       # Делает каталог пакетом
-│       ├── config.py         # Глобальные константы
-│       ├── device_utils.py   # Функции управления устройствами (_to_gpu, _release)
-│       ├── models.py         # Загрузка и хранение моделей
-│       ├── data_processing.py# Вспомогательные функции обработки данных
-│       ├── metrics.py        # Функции вычисления метрик
-│       ├── utils.py          # Общие утилиты (нормализация и т.д.)
-│       ├── example_metric.py # Пример шаблона для добавления новой метрики
-│       ├── pipeline_config.py # Управление конфигурацией пайплайна (JSON)
-│       ├── ranking.py         # Основная логика ранжирования
-│       └── cli.py            # Интерфейс командной строки
-└── outputs/                  # (Игнорируется) Для будущих результатов/промежуточных данных
+│ └── rank_images/ # Основной пакет Python
+│ ├── init.py # Делает каталог пакетом
+│ ├── config.py # Глобальные константы
+│ ├── device_utils.py # Функции управления устройствами (_to_gpu, _release)
+│ ├── models.py # Загрузка и хранение моделей
+│ ├── data_processing.py# Вспомогательные функции обработки данных
+│ ├── metrics.py # Функции вычисления метрик
+│ ├── utils.py # Общие утилиты (нормализация и т.д.)
+│ ├── example_metric.py # Пример шаблона для добавления новой метрики
+│ ├── pipeline_config.py # Управление конфигурацией пайплайна (JSON)
+│ └── ranking.py # Основная логика ранжирования
+└── outputs/ # (Игнорируется) Для будущих результатов/промежуточных данных
 ```
+
+*Пояснение:*
+
+- `pyproject.toml`: Это основной файл конфигурации проекта. Он описывает метаданные проекта (имя, версия, описание) и основные зависимости, включая те, которые требуют специальных флагов установки (--pre, --extra-index-url). Именно этот файл используется pip install -e ..
+- `requirements.txt`: Это опциональный файл, обычно генерируемый инструментами типа uv pip compile. Он содержит фиксированный список всех зависимостей с точными версиями, что делает установку воспроизводимой. Его можно использовать с pip install -r requirements.txt.
+- `constraints.txt`: Это опциональный файл, содержащий жёсткие ограничения на версии критически важных библиотек (например, timm==0.6.13, datasets==2.13.0, image-reward==1.5). Он используется совместно с requirements.txt: pip install -r requirements.txt -c constraints.txt. Это гарантирует, что даже если requirements.txt был сгенерирован с другими версиями, pip установит именно те версии, которые указаны в constraints.txt, разрешая любые конфликты зависимостей в пользу этих версий.
 
 ## Лицензия
 

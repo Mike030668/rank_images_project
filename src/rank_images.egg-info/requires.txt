@@ -5,8 +5,11 @@ accelerate
 torchmetrics[multimodal]
 transformers==4.53.1
 sentence-transformers==4.1.0
-fsspec>=2025.3.0
+bert-score==0.3.13
+fsspec==2025.3.0
 pyarrow==14.0.2
+image-reward==1.5
+datasets==2.13.0
 clip@ git+https://github.com/openai/CLIP.git
 ftfy
 regex
@@ -19,6 +22,17 @@ sklearn-pandas==2.2.0
 tqdm==4.67.1
 Pillow
 ipywidgets
+
+[caption]
+bert_score
+
+[compatibility-fixes]
+timm<1.0,==0.9.2
+datasets==2.13.0
+image-reward==1.5
+fsspec==2025.3.0
+pyarrow==14.0.2
+bert-score==0.3.13
 
 [dev]
 black
