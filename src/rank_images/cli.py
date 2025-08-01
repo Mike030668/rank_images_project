@@ -54,7 +54,8 @@ from .config import (
     DELTA_DEFAULT,
     EPSILON_DEFAULT,
     ZETA_DEFAULT,
-    THETA_DEFAULT, # <-- НОВОЕ
+    THETA_DEFAULT, 
+    PHI_DEFAULT# <-- НОВОЕ
 )
 # --- ИМПОРТ МОДУЛЯ КОНФИГУРАЦИИ ---
 from .pipeline_config import load_pipeline_config, get_default_weights, get_chunk_size, get_enabled_metrics
@@ -148,6 +149,9 @@ def main() -> None:
         default=THETA_DEFAULT,
         help=f"Вес метрики BLIP-2 Caption + BERTScore к prompt. По умолчанию {THETA_DEFAULT}.",
     )
+    parser.add_argument("--phi", type=float, default=0.4,
+                    help="Вес ImageReward (imr)")
+
     #--- НОВЫЙ АРГУМЕНТ ---
     parser.add_argument(
         "--pipeline-config",
@@ -195,7 +199,21 @@ def main() -> None:
     final_delta = args.delta if args.delta is not None else default_weights_from_config.get("delta", DELTA_DEFAULT)
     final_epsilon = args.epsilon if args.epsilon is not None else default_weights_from_config.get("epsilon", EPSILON_DEFAULT)
     final_zeta = args.zeta if args.zeta is not None else default_weights_from_config.get("zeta", ZETA_DEFAULT) # <-- НОВОЕ
-    final_theta = args.zeta if args.theta is not None else default_weights_from_config.get("theta", THETA_DEFAULT) # <-- НОВОЕ
+    final_theta = args.theta if args.theta is not None else default_weights_from_config.get("theta", THETA_DEFAULT) # <-- НОВОЕ
+    final_phi = args.phi if args.phi is not None else default_weights_from_config.get("phi", PHI_DEFAULT) # <-- НОВОЕ
+
+    # --- Карта весов метрик финальная---
+    final_weight_map = {
+        "sig": final_alpha,         # Вес SigLIP-2
+        "flor": final_beta,         # Вес Florence-2
+        "iqa": final_gamma,         # Вес CLIP-IQA
+        "dino": final_delta,        # Вес DINOv2
+        "blip2": final_epsilon,     # Вес BLIP-2 ITM
+        "blip_cap": final_zeta,     # Вес BLIP Caption + BERTScore
+        "blip2_cap": final_theta,   # Вес BLIP-2 Caption + BERTScore
+        "imr" :  final_phi          # Вес image reword   
+    }
+
     # --- Определение финального chunk_size ---
     # Приоритет: CLI > JSON-config > config.py
     final_chunk_size = args.chunk if args.chunk is not None else chunk_size_from_config
@@ -251,7 +269,7 @@ def main() -> None:
         result_df: pd.DataFrame = rank_folder(
             img_dir=args.img_dir,
             prompts_in=args.prompts,
-            # --- ПЕРЕДАЁМ ФИНАЛЬНЫЕ ЗНАЧЕНИЯ ---
+            # --- ПЕРЕДАЁМ ФИНАЛЬНЫЕ ЗНАЧЕНИЯ ВЕСОВ МЕТРИК ---
             alpha=final_alpha,
             beta=final_beta,
             gamma=final_gamma,
@@ -259,6 +277,9 @@ def main() -> None:
             epsilon=final_epsilon,
             zeta=final_zeta, 
             theta=final_theta, 
+            phi = final_phi,
+            # --- КАРТА ВЕСОВ МЕТРИК ДЛЯ ЗАМЕНЫ весов --
+            weight_map = final_weight_map,
             # ----------------------------------
             chunk_size=final_chunk_size, # <-- Обновлённый chunk_size
             # --- ПЕРЕДАЁМ КОНФИГУРАЦИЮ ПАЙПЛАЙНА ---

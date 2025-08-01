@@ -1,10 +1,12 @@
 {
   "pipeline": {
-    "enabled_metrics": ["sig", "iqa", "blip2"],
+    "enabled_metrics": ["sig", "flor", "iqa", "dino", "imr"],
     "default_weights": {
-      "alpha": 0.6,
-      "gamma": 0.2,
-      "epsilon": 0.4
+    "sig": 0.6,
+    "flor": 0.4,
+    "iqa": 0.2,
+    "dino": 0.2,
+    "imr": 0.4               
     }
   },
   "processing": {

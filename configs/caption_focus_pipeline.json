@@ -1,13 +1,14 @@
 {
   "pipeline": {
-    "enabled_metrics": ["blip_cap", "blip2_cap", "iqa"],
+    "enabled_metrics": ["blip2_cap",  "iqa"],
     "default_weights": {
       "gamma": 0.4,
-      "zeta": 0.3,
-      "theta": 0.3
+
+      "zeta": 0.3
     }
   },
   "processing": {
     "chunk_size": 128
   }
 }
+

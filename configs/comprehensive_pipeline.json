@@ -1,6 +1,6 @@
 {
   "pipeline": {
-    "enabled_metrics": ["sig", "flor", "iqa", "dino", "blip2", "blip_cap", "blip2_cap"],
+    "enabled_metrics": ["sig", "flor", "iqa", "dino", "blip2", "blip_cap", "blip2_cap", "imr"],
     "default_weights": {
       "alpha": 0.5,
       "beta": 0.4,
@@ -8,7 +8,8 @@
       "delta": 0.1,
       "epsilon": 0.3,
       "zeta": 0.25,
-      "theta": 0.2
+      "theta": 0.2,
+       "imr": 0.4     
     }
   },
   "processing": {

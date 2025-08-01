@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rank_images"
 version = "0.1.0"
-description = "Ранжирование изображений на основе текстовых промптов и качества с помощью SigLIP-2, Florence-2, CLIP-IQA и DINOv2."
+description = "Ранжирование изображений на основе текстовых промптов и качества с помощью SigLIP-2, Florence-2, CLIP-IQA, DINOv2, BLIP-2 ITM и BLIP-2 Caption + BERTScore."
 authors = [
   {name = "MikePuzitsky", email = "puzitski.mikhail@gmail.com"},
 ]
@@ -18,6 +18,8 @@ requires-python = ">=3.9"
 # --- Основные зависимости проекта ---
 dependencies = [
     # --- PyTorch и экосистема ---
+    # PyTorch >= 2.7.1. Установка будет через специальный индекс (см. ниже в инструкции).
+    # pip/uv будут искать подходящую версию в дополнительном индексе.
     "torch>=2.7.1",
     "torchvision>=0.22.1",
     "torchaudio>=2.7.1",
@@ -28,16 +30,34 @@ dependencies = [
     # --- Трансформеры и NLP ---
     "transformers==4.53.1",
     "sentence-transformers==4.1.0",
+    "bert-score==0.3.13",
     
     # --- Компьютерное зрение ---
-    "timm==1.0.17",
+    # --- ФИКСАЦИЯ ВЕРСИИ ДЛЯ СОВМЕСТИМОСТИ ---
+    # Версия timm 0.6.13 требуется для image-reward==1.5
+    "timm==0.6.13", # <-- Фиксированная версия
+    # -------------------------------
+    "fsspec == 2025.3.0",
+    "pyarrow == 14.0.2",
+
+    # --- ImageReward + минимальные deps ---
+    # --- ФИКСАЦИЯ ВЕРСИИ ДЛЯ СОВМЕСТИМОСТИ ---
+    # Версия image-reward 1.5 требует datasets==2.13.0 и timm==0.6.13
+    "image-reward==1.5", # <-- Фиксированная версия
+    # Версия datasets 2.13.0 требуется для image-reward==1.5
+    "datasets==2.13.0", # <-- Фиксированная версия
+    # -------------------------------
+    "clip @ git+https://github.com/openai/CLIP.git",
+    "ftfy",
+    "regex",
+    "tqdm",
     
     # --- Вычисления и трансформации ---
     "einops",
     "piq",
     
     # --- Числовые и табличные данные ---
-    # numpy < 2.0.0 для совместимости
+    # numpy < 2.0.0 для совместимости с некоторыми библиотеками
     "numpy<2.0.0",
     "pandas==2.2.2",
     "sklearn-pandas==2.2.0",
@@ -50,27 +70,54 @@ dependencies = [
     "ipywidgets",
 ]
 
+# --- Дополнительные группы зависимостей ---
 [project.optional-dependencies]
+# Зависимости для разработки и форматирования
 dev = [
     "black",
     "flake8",
     "isort",
 ]
+# Зависимости для тестирования
 test = [
     "pytest",
     "pytest-cov",
 ]
+# Зависимости для работы с Jupyter ноутбуками
 notebook = [
     "jupyter",
     # ipywidgets уже в основных зависимостях
 ]
+# --- НОВАЯ ГРУППА ---
+# Зависимости для новой метрики BLIP Caption + BERTScore
+caption = [
+    "bert_score",
+]
+# --- НОВАЯ ГРУППА ---
+# Зависимости для устранения конфликтов совместимости
+# Эти версии необходимы для корректной работы image-reward и timm
+# вместе с другими библиотеками.
+# Устанавливается автоматически с основными зависимостями через -e .
+# Может быть полезна для pip install -r requirements.txt -c constraints.txt
+compatibility-fixes = [
+    "timm==0.6.13",
+    "datasets==2.13.0",
+    "image-reward==1.5",
+    "fsspec==2025.3.0",
+    "pyarrow == 14.0.2",
+    "bert-score==0.3.13",
+]
+# ------------------
 
+# --- Точка входа для CLI ---
 [project.scripts]
 rank-images = "rank_images.cli:main"
 
+# --- Настройка setuptools для поиска пакетов ---
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# --- Настройки инструментов (опционально) ---
 [tool.black]
 line-length = 88
 target-version = ['py39']
