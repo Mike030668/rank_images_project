@@ -35,7 +35,8 @@ from .metrics import (
     get_blip2_match_score,
     # --- НОВАЯ МЕТРИКА ---
     get_blip_caption_bertscore,
-    get_blip2_caption_bertscore, # <-- НОВОЕ
+    get_blip2_caption_bertscore, 
+    get_imr_score, # <-- НОВОЕ
     # --------------------
 )
 # --- ИМПОРТ УТИЛИТ ДЛЯ ПАЙПЛАЙНА ---
@@ -51,9 +52,10 @@ from .config import (
     EPSILON_DEFAULT,
     # --- НОВАЯ МЕТРИКА ---
     ZETA_DEFAULT,
-    THETA_DEFAULT, # <-- НОВОЕ
-    # --------------------
-    ALL_METRICS
+    THETA_DEFAULT,
+    PHI_DEFAULT,  
+    # -------------------- <-- НОВОЕ
+    WEIGHT_MAP # # словарь весов с учетом возможных изменений через json конфигурации
 )
 
 logger = logging.getLogger(__name__)
@@ -61,14 +63,17 @@ logger = logging.getLogger(__name__)
 def rank_folder(
     img_dir: Path,
     prompts_in: Optional[Union[str, dict, pd.DataFrame]] = None,
+    # --- веса метрик отдельно---
     alpha: float = ALPHA_DEFAULT,
     beta: float = BETA_DEFAULT,
     gamma: float = GAMMA_DEFAULT,
     delta: float = DELTA_DEFAULT,
     epsilon: float = EPSILON_DEFAULT,
-    # --- НОВАЯ МЕТРИКА ---
     zeta: float = ZETA_DEFAULT,
-    theta: float = THETA_DEFAULT, # <-- НОВОЕ
+    theta: float = THETA_DEFAULT,
+    phi: float = PHI_DEFAULT,  
+    # --- карта весов метрик для замены --
+    weight_map = WEIGHT_MAP, # <-- НОВОЕ
     # --------------------
     chunk_size: Optional[int] = None,
     # --- ПАЙПЛАЙН ---
@@ -107,9 +112,13 @@ def rank_folder(
                        По умолчанию 0.1.
         epsilon (float): Вес метрики BLIP-2 (Image-Text Matching).
                          По умолчанию 0.3.
-        # --- НОВАЯ МЕТРИКА ---
         zeta (float): Вес метрики BLIP Caption + BERTScore к prompt.
                       По умолчанию 0.25.
+        phi (float): Вес метрики imagereward.
+                      По умолчанию 0.4.         
+        # --- НОВОЕ  ---
+        weight_map  (dict | None): карта весов метрик.    
+               
         # --------------------
         chunk_size (int | None): Максимальное количество токенов в одном фрагменте
                                  текста для SigLIP.
@@ -135,6 +144,7 @@ def rank_folder(
     
     # --- ИЗВЛЕЧЕНИЕ КОНФИГУРАЦИИ ПАЙПЛАЙНА ---
     enabled_metrics_list = get_enabled_metrics(pipeline_config) if pipeline_config else []
+    print(f"[DEBUG] Включенные метрики: {enabled_metrics_list}")
     logger.info(f"Включённые метрики: {enabled_metrics_list}")
     # Получаем список ВСЕХ доступных метрик из конфига
     all_metrics_list = get_all_metrics(pipeline_config) if pipeline_config else []
@@ -185,7 +195,7 @@ def rank_folder(
             
             # --- Итерируемся по ВКЛЮЧЕННЫМ метрикам ---
             for metric_name in enabled_metrics_list:
-                try:
+                #try:
                     if metric_name == "sig":
                         siglip_pos_score = get_siglip_score(img_pil, positive_chunks_siglip)
                         siglip_neg_score = get_siglip_score(img_pil, negative_chunks_siglip)
@@ -240,15 +250,24 @@ def rank_folder(
 
                     elif metric_name == "blip_cap":
                         blip_caption_score = get_blip_caption_bertscore(img_pil, row["prompt"])
+                        #print(f"blip_caption_score_{blip_caption_score}")
                         res_dict["blip_cap"] = blip_caption_score
                         #logger.debug(f"  BLIP Caption Score: {blip_caption_score:.4f}")
                         logger.debug(f"[RANKING_DEBUG] blip_caption_score для {image_filename}: {blip_caption_score:.4f}")
                     
                     elif metric_name == "blip2_cap":
                          blip2_caption_score = get_blip2_caption_bertscore(img_pil, row["prompt"])
+                         #print(f"blip2_caption_score_{blip2_caption_score}")
                          res_dict["blip2_cap"] = blip2_caption_score
                          #logger.debug(f"  BLIP-2 Caption Score: {blip2_caption_score:.4f}")
                          logger.debug(f"[RANKING_DEBUG] blip2_caption_score для {image_filename}: {blip2_caption_score:.4f}")
+
+                    elif metric_name == "imr":
+                        imr_pos = get_imr_score(img_pil, positive_chunks_siglip)
+                        imr_neg = get_imr_score(img_pil, negative_chunks_siglip)
+                        imr_val = imr_pos - 0.5 * imr_neg # 0.5 можно вынести в cfg
+                        res_dict["imr"] = imr_val
+                        logger.debug(f" IMR: {imr_val:.4f}")
 
                     # --- Добавьте elif для новых метрик здесь ---
                     # elif metric_name == "new_metric":
@@ -260,10 +279,10 @@ def rank_folder(
                     else:
                         logger.warning(f"Неизвестная метрика '{metric_name}' в списке включённых. Пропускаю.")
 
-                except Exception as metric_e:
-                    logger.error(f"Ошибка при вычислении метрики '{metric_name}' для изображения {image_path}: {metric_e}")
+               # except Exception as metric_e:
+               #     logger.error(f"Ошибка при вычислении метрики '{metric_name}' для изображения {image_path}: {metric_e}")
                     # Можно либо пропустить метрику, либо записать 0.0
-                    res_dict[metric_name] = 0.0 # Записываем 0.0 в случае ошибки
+               #     res_dict[metric_name] = 0.0 # Записываем 0.0 в случае ошибки
             
             # --- Конец итерации по включённым метрикам ---
 
@@ -299,12 +318,12 @@ def rank_folder(
     
     # Вызываем универсальную функцию нормализации
     normalized_data: Dict[str, np.ndarray] = normalize_metrics(results, metrics_to_normalize)
-
     # Обновляем словари в `results` нормализованными значениями
     for metric_norm_name, norm_values in normalized_data.items():
         # metric_norm_name будет, например, "sig_norm"
-        for i, res_dict in enumerate(results):
-            res_dict[metric_norm_name] = norm_values[i]
+        for i, res_dict in enumerate(results): # <-- enumerate(results)
+            res_dict[metric_norm_name] = norm_values[i] # <-- norm_values[i]
+    
     # --- Конец централизованной нормализации ---
 
     # --- Вычисление итогового балла ---
@@ -341,7 +360,10 @@ def rank_folder(
         # --- НОВАЯ МЕТРИКА ---
         if "blip2_cap" in enabled_metrics_list:
             total_score += theta * res_dict.get("blip2_cap_norm", 0.0)
-            total_weight += theta
+        if "imr" in enabled_metrics_list:
+            total_score += phi * res_dict.get("imr_norm", 0.0)
+            total_weight += phi
+            
         # --------------------
         # --- Шаблон для добавления новой метрики ---
         # if "new_metric" in enabled_metrics_list:
@@ -354,12 +376,12 @@ def rank_folder(
             res_dict["total"] = total_score / total_weight
         else:
             res_dict["total"] = 0.0
-            
     # --- Конец нормализации и вычисления итогового балла ---
 
     # --- 5. Сортировка и сохранение ---
     # Создаем DataFrame из результатов
     output_df = pd.DataFrame(results)
+
     # Сортируем по убыванию итогового балла
     output_df = output_df.sort_values(by="total", ascending=False).reset_index(drop=True)
 

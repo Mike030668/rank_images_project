@@ -97,11 +97,17 @@ THETA_DEFAULT: float = 0.2
 float: Вес метрики BLIP-2 Caption + BERTScore к prompt. По умолчанию 0.2.
 """
 
+PHI_DEFAULT: float = 0.4
+"""
+float: Вес метрики imagereward. По умолчанию 0.2.
+"""
+
+
 # --- Словарь всех метрик и их параметров ---
 # Централизованный словарь для унификации конфигурации пайплайна.
 # Ключ: имя метрики (для enabled_metrics).
 # Значение: словарь с параметрами метрики.
-ALL_METRICS: Dict[str, Dict[str, Any]] = {
+WEIGHT_MAP: Dict[str, Dict[str, Any]] = {
     "sig": {
         "default_weight": ALPHA_DEFAULT,
         "description": "Схожесть изображения и текста (SigLIP-2)"
@@ -130,6 +136,10 @@ ALL_METRICS: Dict[str, Dict[str, Any]] = {
         "default_weight": THETA_DEFAULT,
         "description": "Соответствие описания промпту (BLIP-2 Caption + BERTScore)"
     },
+    "imr": {
+        "default_weight": PHI_DEFAULT,
+        "description": "Оценка качества изображения (imr)"
+    },
     # --- Шаблон для добавления новой метрики ---
     # "new_metric": {
     #     "default_weight": NEW_METRIC_WEIGHT_DEFAULT,
@@ -137,6 +147,9 @@ ALL_METRICS: Dict[str, Dict[str, Any]] = {
     # },
     # --------------------------------------------
 }
+
+
+
 """
 Dict[str, Dict[str, Any]]: Централизованный словарь всех доступных метрик.
     Ключ: имя метрики (str).

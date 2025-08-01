@@ -1,0 +1,2 @@
+[console_scripts]
+rank-images = rank_images.cli:main

@@ -1,0 +1,10 @@
+timm==0.6.13
+datasets==2.13.0
+image-reward==1.5
+fsspec==2025.3.0
+pyarrow == 14.0.2
+bert-score==0.3.13
+datasets==2.13.0
+image-reward==1.5
+fsspec==2025.3.0
+pyarrow == 14.0.2
